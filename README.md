@@ -1,75 +1,19 @@
-# React + TypeScript + Vite
+# SMRT
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**SMRT** is a browser-based, offline-first AI study companion. It works as a Progressive Web App (PWA) — install it once on Wi-Fi, and it keeps working as a fully capable AI assistant even with no internet connection at all.
 
-Currently, two official plugins are available:
+Built for students, researchers, and remote workers dealing with expensive mobile data, patchy networks, or unreliable power. SMRT caches every conversation locally as you use it online, lets you pre-load entire textbooks/PDFs into a local knowledge base while on Wi-Fi, and can queue up research tasks to run automatically the next time you're connected.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Core features
 
-## React Compiler
+- **Hybrid chat** — online answers are cached automatically; offline questions fall back to local search, then to an on-device AI model.
+- **PDF intake pipeline** — feed it a textbook on Wi-Fi, get a condensed "knowledge pack" you can query fully offline.
+- **Fetch-It-Later queue** — leave a research request while offline; it runs automatically the moment you're back online.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech stack
 
-## Expanding the ESLint configuration
+React + TypeScript + Vite, IndexedDB (Dexie) for local storage, WebLLM for on-device inference, Google Gemini API for cloud chat/research, Supabase for auth and backend functions.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Status
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
-
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+🚧 Early development — not yet usable.
