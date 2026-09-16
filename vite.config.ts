@@ -1,15 +1,14 @@
-import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
-        globIgnores: ['**/node_modules/**/*', '**/lib-*.js'],
+        globIgnores: ['**/node_modules/**/*', '**/webllm-*.js', '**/pdfjs-*.js', '**/mammoth-*.js'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
       manifest: {
@@ -25,5 +24,16 @@ export default defineConfig({
         ],
       },
     }),
-  ]
+  ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('@mlc-ai/web-llm')) return 'webllm';
+          if (id.includes('pdfjs-dist')) return 'pdfjs';
+          if (id.includes('mammoth')) return 'mammoth';
+        },
+      },
+    },
+  },
 })

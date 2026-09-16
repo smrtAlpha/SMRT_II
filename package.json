@@ -13,6 +13,8 @@
     "@mlc-ai/web-llm": "^0.2.85",
     "@supabase/supabase-js": "^2.116.0",
     "dexie": "^4.4.6",
+    "mammoth": "^1.12.3",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0"

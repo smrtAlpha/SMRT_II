@@ -3,6 +3,7 @@ import InstallButton from './components/InstallButton';
 import { useAuth } from './lib/useAuth';
 import { useOnlineStatus } from './lib/useOnlineStatus';
 import './App.css';
+import KnowledgePackUpload from './components/KnowledgePackUpload';
 
 function App() {
   const { user, loading } = useAuth();
@@ -17,6 +18,7 @@ function App() {
       <h1>SMRT</h1>
       {!isOnline && <div className="offline-banner">You're offline — using cached history</div>}
       <InstallButton />
+      <KnowledgePackUpload userId={user?.id ?? ''} />
       <ChatWindow userId={user?.id ?? ''} />
       <p className="user-id">Session: {user?.id.slice(0, 8) ?? 'none'}</p>
     </div>

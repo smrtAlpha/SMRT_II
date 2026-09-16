@@ -1,4 +1,5 @@
-import { useState } from 'react';
+// import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import type { ChatMessage } from '../types';
@@ -8,6 +9,7 @@ import { useOnlineStatus } from '../lib/useOnlineStatus';
 import { searchLocalHistory } from '../lib/localSearch';
 import { useLocalModel } from '../lib/useLocalModel';
 import { generateLocalReply } from '../lib/localModel';
+
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-chat`;
 
@@ -20,6 +22,21 @@ export default function ChatWindow({ userId }: Props) {
   const [isLoading, setIsLoading] = useState(false);
   const isOnline = useOnlineStatus();
   const localModel = useLocalModel();
+
+  const [showReadyBanner, setShowReadyBanner] = useState(false);
+  const wasReady = useRef(false);
+
+  useEffect(() => {
+    if (localModel.isReady && !wasReady.current) {
+      wasReady.current = true;
+      setShowReadyBanner(true);
+      const timer = setTimeout(() => setShowReadyBanner(false), 5000);
+      return () => clearTimeout(timer);
+    }
+    
+}, [localModel.isReady]);
+
+
 
   async function respondOffline(query: string, assistantId: string) {
     const match = await searchLocalHistory(userId, query);
@@ -114,6 +131,11 @@ export default function ChatWindow({ userId }: Props) {
   return (
     <div className="chat-window">
       <MessageList messages={messages} />
+
+      {showReadyBanner && (
+        <div className="local-model-banner ready">✅ Offline AI downloaded and ready to use.</div>
+      )}
+      
       {!localModel.isReady && (
         <div className="local-model-banner">
           {localModel.isDownloading ? (
