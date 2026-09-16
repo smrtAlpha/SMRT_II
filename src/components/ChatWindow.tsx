@@ -2,41 +2,67 @@ import { useState } from 'react';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import type { ChatMessage } from '../types';
+import { supabase } from '../lib/supabase';
+
+const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-chat`;
 
 export default function ChatWindow() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  function handleSend(text: string) {
+  async function handleSend(text: string) {
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: text };
-    const assistantMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: '' };
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
-    simulateStreamingReply(assistantMsg.id, `This is a placeholder reply to: "${text}". Phase 2 swaps this out for a real Gemini response.`);
-  }
+    const assistantId = crypto.randomUUID();
+    setMessages((prev) => [...prev, userMsg, { id: assistantId, role: 'assistant', content: '' }]);
+    setIsLoading(true);
 
-  // TEMPORARY — fakes a token-by-token reply so we can build and test the UI now.
-  // Phase 2 deletes this function and replaces it with the real Gemini streaming call.
-  function simulateStreamingReply(messageId: string, fullText: string) {
-    setIsStreaming(true);
-    const words = fullText.split(' ');
-    let i = 0;
-    const interval = setInterval(() => {
-      i++;
-      const partial = words.slice(0, i).join(' ');
-      setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, content: partial } : m))
-      );
-      if (i >= words.length) {
-        clearInterval(interval);
-        setIsStreaming(false);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const res = await fetch(FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ prompt: text }),
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error(`Request failed with status ${res.status}`);
       }
-    }, 60);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        accumulated += decoder.decode(value, { stream: true });
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
+        );
+      }
+    } catch (err) {
+      console.error('Gemini call failed:', err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, content: 'Something went wrong reaching SMRT. Please try again.' }
+            : m
+        )
+      );
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
     <div className="chat-window">
       <MessageList messages={messages} />
-      <MessageInput onSend={handleSend} disabled={isStreaming} />
+      <MessageInput onSend={handleSend} disabled={isLoading} />
     </div>
   );
 }

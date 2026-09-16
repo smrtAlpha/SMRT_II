@@ -1,4 +1,5 @@
 import ChatWindow from './components/ChatWindow';
+import InstallButton from './components/InstallButton';
 import { useAuth } from './lib/useAuth';
 import './App.css';
 
@@ -12,6 +13,7 @@ function App() {
   return (
     <div className="app">
       <h1>SMRT</h1>
+      <InstallButton />
       <ChatWindow />
       <p className="user-id">Session: {user?.id.slice(0, 8) ?? 'none'}</p>
     </div>
