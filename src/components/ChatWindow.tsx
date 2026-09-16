@@ -3,10 +3,15 @@ import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import type { ChatMessage } from '../types';
 import { supabase } from '../lib/supabase';
+import { db } from '../lib/db';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-chat`;
 
-export default function ChatWindow() {
+type Props = {
+  userId: string;
+};
+
+export default function ChatWindow({ userId }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -44,6 +49,23 @@ export default function ChatWindow() {
         setMessages((prev) =>
           prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
         );
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        accumulated += decoder.decode(value, { stream: true });
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated } : m))
+        );
+      }
+
+      await db.qaHistory.add({
+        id: assistantId,
+        userId,
+        question: text,
+        answer: accumulated,
+        timestamp: Date.now(),
+      });
       }
     } catch (err) {
       console.error('Gemini call failed:', err);

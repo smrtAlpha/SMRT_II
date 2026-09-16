@@ -14,7 +14,7 @@ function App() {
     <div className="app">
       <h1>SMRT</h1>
       <InstallButton />
-      <ChatWindow />
+      <ChatWindow userId={user?.id ?? ''} />
       <p className="user-id">Session: {user?.id.slice(0, 8) ?? 'none'}</p>
     </div>
   );
