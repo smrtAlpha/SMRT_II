@@ -159,3 +159,13 @@
   cursor: pointer;
   font-size: 0.85rem;
 }
+
+.offline-banner {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
