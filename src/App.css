@@ -169,3 +169,19 @@
   text-align: center;
   margin-bottom: 0.5rem;
 }
+
+.local-model-banner {
+  padding: 0.4rem 0;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.download-button {
+  padding: 0.35rem 0.7rem;
+  border-radius: 0.5rem;
+  border: 1px solid #6b7280;
+  background: transparent;
+  color: #374151;
+  cursor: pointer;
+  font-size: 0.8rem;
+}

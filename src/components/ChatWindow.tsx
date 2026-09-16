@@ -6,6 +6,8 @@ import { supabase } from '../lib/supabase';
 import { db } from '../lib/db';
 import { useOnlineStatus } from '../lib/useOnlineStatus';
 import { searchLocalHistory } from '../lib/localSearch';
+import { useLocalModel } from '../lib/useLocalModel';
+import { generateLocalReply } from '../lib/localModel';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-chat`;
 
@@ -17,13 +19,39 @@ export default function ChatWindow({ userId }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const isOnline = useOnlineStatus();
+  const localModel = useLocalModel();
 
-  async function respondFromCache(query: string, assistantId: string) {
+  async function respondOffline(query: string, assistantId: string) {
     const match = await searchLocalHistory(userId, query);
-    const content = match
-      ? `*(from your offline history — asked ${new Date(match.record.timestamp).toLocaleDateString()})*\n\n${match.record.answer}`
-      : "You're offline and I don't have a similar cached answer for this yet. I'll be able to help once you're back online.";
-    setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content } : m)));
+    if (match) {
+      const content = `*(from your offline history — asked ${new Date(match.record.timestamp).toLocaleDateString()})*\n\n${match.record.answer}`;
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content } : m)));
+      return;
+    }
+
+    if (localModel.isReady) {
+      try {
+        const reply = await generateLocalReply(query);
+        const content = `*(generated offline by your on-device AI)*\n\n${reply}`;
+        setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content } : m)));
+      } catch (err) {
+        console.error('Local model generation failed:', err);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: "Your offline AI hit an error. Try again." } : m
+          )
+        );
+      }
+      return;
+    }
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === assistantId
+          ? { ...m, content: "No cached answer for this, and your offline AI isn't downloaded yet — see the banner below." }
+          : m
+      )
+    );
   }
 
   async function handleSend(text: string) {
@@ -32,9 +60,8 @@ export default function ChatWindow({ userId }: Props) {
     setMessages((prev) => [...prev, userMsg, { id: assistantId, role: 'assistant', content: '' }]);
     setIsLoading(true);
 
-    // Fast path: browser already knows there's no connection, skip straight to local search.
     if (!isOnline) {
-      await respondFromCache(text, assistantId);
+      await respondOffline(text, assistantId);
       setIsLoading(false);
       return;
     }
@@ -69,26 +96,14 @@ export default function ChatWindow({ userId }: Props) {
         );
       }
 
-      await db.qaHistory.add({
-        id: assistantId,
-        userId,
-        question: text,
-        answer: accumulated,
-        timestamp: Date.now(),
-      });
+      await db.qaHistory.add({ id: assistantId, userId, question: text, answer: accumulated, timestamp: Date.now() });
     } catch (err) {
-      // A real fetch-level failure (not an HTTP error status) means we're actually offline,
-      // even if navigator.onLine hadn't caught up to that yet.
       if (err instanceof TypeError) {
-        await respondFromCache(text, assistantId);
+        await respondOffline(text, assistantId);
       } else {
         console.error('Gemini call failed:', err);
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? { ...m, content: 'Something went wrong reaching SMRT. Please try again.' }
-              : m
-          )
+          prev.map((m) => (m.id === assistantId ? { ...m, content: 'Something went wrong reaching SMRT. Please try again.' } : m))
         );
       }
     } finally {
@@ -99,6 +114,17 @@ export default function ChatWindow({ userId }: Props) {
   return (
     <div className="chat-window">
       <MessageList messages={messages} />
+      {!localModel.isReady && (
+        <div className="local-model-banner">
+          {localModel.isDownloading ? (
+            <span>{localModel.progressText || 'Downloading offline AI...'}</span>
+          ) : (
+            <button onClick={localModel.download} className="download-button">
+              Download offline AI (~880MB, do this on Wi-Fi)
+            </button>
+          )}
+        </div>
+      )}
       <MessageInput onSend={handleSend} disabled={isLoading} />
     </div>
   );
