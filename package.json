@@ -12,12 +12,17 @@
   "dependencies": {
     "@mlc-ai/web-llm": "^0.2.85",
     "@supabase/supabase-js": "^2.116.0",
+    "@tailwindcss/vite": "^4.3.3",
     "dexie": "^4.4.6",
+    "dexie-react-hooks": "^4.4.0",
+    "lucide-react": "^1.47.0",
     "mammoth": "^1.12.3",
     "pdfjs-dist": "^6.3.289",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "tailwindcss": "^4.3.3",
+    "workbox-precaching": "^7.4.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

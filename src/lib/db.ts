@@ -17,9 +17,41 @@ export interface KnowledgePack {
   timestamp: number;
 }
 
+export interface ResearchTask {
+  id: string;
+  userId: string;
+  query: string;
+  status: 'pending' | 'completed' | 'failed';
+  result?: string;
+  errorMessage?: string;
+  accessToken: string;
+  createdAt: number;
+  completedAt?: number;
+}
+
+export interface Conversation {
+  id: string;
+  userId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  userId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+}
+
 class SmrtDatabase extends Dexie {
   qaHistory!: Table<QARecord, string>;
   knowledgePacks!: Table<KnowledgePack, string>;
+  researchQueue!: Table<ResearchTask, string>;
+  conversations!: Table<Conversation, string>;
+  messages!: Table<Message, string>;
 
   constructor() {
     super('smrt-db');
@@ -29,6 +61,18 @@ class SmrtDatabase extends Dexie {
     this.version(2).stores({
       qaHistory: 'id, userId, timestamp',
       knowledgePacks: 'id, userId, subject, timestamp',
+    });
+    this.version(3).stores({
+      qaHistory: 'id, userId, timestamp',
+      knowledgePacks: 'id, userId, subject, timestamp',
+      researchQueue: 'id, userId, status, createdAt',
+    });
+    this.version(4).stores({
+      qaHistory: 'id, userId, timestamp',
+      knowledgePacks: 'id, userId, subject, timestamp',
+      researchQueue: 'id, userId, status, createdAt',
+      conversations: 'id, userId, updatedAt',
+      messages: 'id, conversationId, timestamp',
     });
   }
 }

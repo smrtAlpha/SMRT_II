@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Upload } from 'lucide-react';
 import { extractTextFromFile } from '../lib/extractText';
 import { db } from '../lib/db';
 import { supabase } from '../lib/supabase';
@@ -63,19 +64,30 @@ export default function KnowledgePackUpload({ userId }: Props) {
   const busy = status === 'extracting' || status === 'summarizing';
 
   return (
-    <div className="knowledge-pack-upload">
+    <div className="mb-2 flex flex-col gap-2 rounded-lg border border-dashed border-slate-300 p-3 text-sm">
+      <div className="flex items-center gap-2 text-slate-500">
+        <Upload size={14} />
+        <span>Add a knowledge pack</span>
+      </div>
       <input
         type="text"
         placeholder="Subject (e.g. Organic Chemistry)"
         value={subject}
         onChange={(e) => setSubject(e.target.value)}
         disabled={busy}
+        className="rounded-md border border-slate-300 px-2 py-1.5 text-sm disabled:opacity-50"
       />
-      <input type="file" accept=".pdf,.docx,.txt,.md" onChange={handleFile} disabled={busy} />
-      {status === 'extracting' && <p>Reading document...</p>}
-      {status === 'summarizing' && <p>Condensing into a knowledge pack (can take a moment for large files)...</p>}
-      {status === 'done' && <p>✅ Knowledge pack saved — available offline.</p>}
-      {status === 'error' && <p className="error-text">{errorMsg}</p>}
+      <input
+        type="file"
+        accept=".pdf,.docx,.txt,.md"
+        onChange={handleFile}
+        disabled={busy}
+        className="text-sm disabled:opacity-50"
+      />
+      {status === 'extracting' && <p className="text-slate-500">Reading document...</p>}
+      {status === 'summarizing' && <p className="text-slate-500">Condensing into a knowledge pack (can take a moment for large files)...</p>}
+      {status === 'done' && <p className="text-green-700">✅ Knowledge pack saved — available offline.</p>}
+      {status === 'error' && <p className="text-red-600">{errorMsg}</p>}
     </div>
   );
 }
