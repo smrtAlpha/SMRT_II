@@ -3,9 +3,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MODEL_FALLBACK_LIST = ['gemini-3.1-flash-lite', 'gemini-3.5-flash'];
+// Same models the chat uses. No live web search is used here, so we no longer depend on the
+// small separate Google Search grounding quota that was causing the 429 errors.
+const MODEL_FALLBACK_LIST = ['gemini-3.5-flash', 'gemini-3.1-flash-lite'];
 
-async function callGeminiGrounded(model: string, query: string, apiKey: string, maxRetries = 2) {
+function buildPrompt(query: string) {
+  return `You are helping with a research task. You cannot browse the web, so answer from your own knowledge. Be clear and well organized.
+
+If the task depends on recent or live information (prices, news, current events, latest versions), say that plainly, give the most recent information you know, and mention that it may be out of date.
+
+TASK: ${query}`;
+}
+
+async function callGemini(model: string, query: string, apiKey: string, maxRetries = 2) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -13,8 +23,7 @@ async function callGeminiGrounded(model: string, query: string, apiKey: string, 
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: query }] }],
-        tools: [{ google_search: {} }],
+        contents: [{ parts: [{ text: buildPrompt(query) }] }],
       }),
     });
 
@@ -35,7 +44,7 @@ async function callGeminiGrounded(model: string, query: string, apiKey: string, 
 async function researchWithFallback(query: string, apiKey: string) {
   let lastError: unknown;
   for (const model of MODEL_FALLBACK_LIST) {
-    const result = await callGeminiGrounded(model, query, apiKey);
+    const result = await callGemini(model, query, apiKey);
     if (result.text) return { text: result.text, modelUsed: model };
     lastError = result.error;
     console.error(`Model ${model} failed:`, JSON.stringify(result.error));
@@ -67,9 +76,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ result: outcome.text, modelUsed: outcome.modelUsed }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ result: outcome.text, modelUsed: outcome.modelUsed, searchUsed: false }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500,

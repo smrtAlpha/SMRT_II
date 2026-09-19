@@ -22,7 +22,14 @@ export default function ResearchQueueList({ userId }: Props) {
           <summary className="cursor-pointer">
             {task.status === 'pending' ? '⏳' : task.status === 'completed' ? '✅' : '❌'} {task.query}
           </summary>
-          {task.status === 'completed' && <p className="mt-1 text-slate-600">{task.result}</p>}
+          {task.status === 'completed' && (
+            <>
+              <p className="mt-1 inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                No live web search. Answered from Gemini's own knowledge, so it may be out of date.
+              </p>
+              <p className="mt-1 whitespace-pre-wrap text-slate-600">{task.result}</p>
+            </>
+          )}
           {task.status === 'failed' && <p className="mt-1 text-red-600">{task.errorMessage}</p>}
         </details>
       ))}
