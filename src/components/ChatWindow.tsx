@@ -40,9 +40,10 @@ function buildAugmentedPrompt(query: string, pack: KnowledgePack | null, attachm
 
   const intro = attachmentContext
     ? `The user attached file(s) to this chat, shown below. Decide whether the question can be answered from them.
-- If the attached file(s) contain the answer, answer using them and begin your reply with this exact line: *(From your attached file)*
-- If they do NOT contain the answer (for example, the question is unrelated to the file), answer from your own general knowledge and begin your reply with this exact line: *(Not found in your attached file. This answer is from outside sources.)*
-Put that line first, then a blank line, then your answer.`
+Begin your reply with exactly one of these two tags, alone on the first line, before anything else:
+[[FROM_FILE]] - if the attached file(s) contain the answer. Then answer using them.
+[[OUTSIDE]] - if they do NOT contain the answer (for example, the question is unrelated to the file). Then answer from your own general knowledge.
+Never mention the tag in your answer. Put a blank line after the tag, then your answer.`
     : "Use the following reference material if it's relevant to the question. If it isn't relevant, just answer normally from your own knowledge.";
 
   const parts = [intro];

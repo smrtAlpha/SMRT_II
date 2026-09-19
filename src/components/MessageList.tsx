@@ -1,7 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { User, Copy, Check, ThumbsUp, ThumbsDown, MoreHorizontal, FileText } from 'lucide-react';
+import {
+  User,
+  Copy,
+  Check,
+  ThumbsUp,
+  ThumbsDown,
+  MoreHorizontal,
+  FileText,
+  Globe,
+  Cpu,
+  History,
+  Info,
+  GraduationCap,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import Logo from './Logo';
 import type { ChatMessage } from '../types';
 
@@ -60,6 +74,121 @@ const MARKDOWN_STYLES = [
   '[&_td]:min-w-24 [&_td]:border-t [&_td]:border-slate-200 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top',
 ].join(' ');
 
+// Answers can start with short "source notes": the app writes some (like *(using your Biology knowledge pack)*),
+// and the AI is asked to start with a tag: [[FROM_FILE]] or [[OUTSIDE]]. We pull these out of the text
+// and show them as small badges, so they don't mix into the answer.
+const TAG_PATTERN = /^\s*[*_]{0,2}\[\[\s*(FROM_FILE|OUTSIDE)\s*\]\][*_]{0,2}/;
+const NOTE_PATTERN = /^\s*((?:\*\*|\*|_)?)\(([^()]{1,200})\)((?:\*\*|\*|_)?)/;
+
+const TAG_LABELS: Record<string, string> = {
+  FROM_FILE: 'From your attached file',
+  OUTSIDE: 'Not found in your attached file. This answer is from outside sources.',
+};
+
+function splitLabels(content: string): { labels: string[]; body: string } {
+  const labels: string[] = [];
+  let rest = content;
+
+  while (true) {
+    const tag = rest.match(TAG_PATTERN);
+    if (tag) {
+      labels.push(TAG_LABELS[tag[1]]);
+      rest = rest.slice(tag[0].length);
+      continue;
+    }
+    // A note in brackets. Only treated as a note if it has italic markers around it,
+    // or it talks about the attached file (so a normal answer starting with "(a) ..." is left alone).
+    const note = rest.match(NOTE_PATTERN);
+    if (note && (note[1] !== '' || /attached file/i.test(note[2]))) {
+      labels.push(note[2].trim());
+      rest = rest.slice(note[0].length);
+      continue;
+    }
+    break;
+  }
+
+  const trimmed = rest.trimStart();
+  // A tag or note that is still being typed out: hold it back so raw text doesn't flash on screen.
+  const stillTyping =
+    /^[*_]{0,2}\[{1,2}[A-Z_]*\]?$/.test(trimmed) ||
+    (/^(?:\*\*|\*|_)\(/.test(trimmed) && !/\)(?:\*\*|\*|_)/.test(trimmed) && trimmed.length < 250);
+  return { labels, body: stillTyping ? '' : trimmed };
+}
+
+function capitalize(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+type BadgeStyle = { Icon: LucideIcon; className: string; text: string };
+
+function badgeFor(label: string): BadgeStyle {
+  const lower = label.toLowerCase();
+  if (lower.includes('not found') && lower.includes('outside')) {
+    return { Icon: Globe, className: 'bg-amber-50 text-amber-700', text: 'Outside source — not found in your attached file' };
+  }
+  if (lower.includes('attached file')) {
+    return { Icon: FileText, className: 'bg-blue-50 text-blue-700', text: capitalize(label) };
+  }
+  if (lower.includes('offline history')) {
+    return { Icon: History, className: 'bg-slate-100 text-slate-600', text: capitalize(label) };
+  }
+  if (lower.includes('offline')) {
+    return { Icon: Cpu, className: 'bg-slate-100 text-slate-600', text: capitalize(label) };
+  }
+  if (lower.includes('knowledge pack')) {
+    return { Icon: GraduationCap, className: 'bg-blue-50 text-blue-700', text: capitalize(label) };
+  }
+  return { Icon: Info, className: 'bg-slate-100 text-slate-600', text: capitalize(label) };
+}
+
+function AssistantMessage({ content }: { content: string }) {
+  const { labels, body } = splitLabels(content);
+
+  return (
+    <div className="flex animate-[fadeInUp_0.25s_ease-out] items-start gap-3">
+      <Logo size={32} className="mt-1" />
+      <div className="min-w-0 flex-1">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+          {labels.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {labels.map((label, i) => {
+                const { Icon, className, text } = badgeFor(label);
+                return (
+                  <span
+                    key={`${label}-${i}`}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${className}`}
+                  >
+                    <Icon size={12} className="shrink-0" />
+                    {text}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {body === '' ? (
+            <div className="flex gap-1 py-1">
+              <span className="h-1.5 w-1.5 animate-[bounce-dot_1.2s_ease-in-out_infinite] rounded-full bg-slate-500" />
+              <span
+                className="h-1.5 w-1.5 animate-[bounce-dot_1.2s_ease-in-out_infinite] rounded-full bg-slate-500"
+                style={{ animationDelay: '0.15s' }}
+              />
+              <span
+                className="h-1.5 w-1.5 animate-[bounce-dot_1.2s_ease-in-out_infinite] rounded-full bg-slate-500"
+                style={{ animationDelay: '0.3s' }}
+              />
+            </div>
+          ) : (
+            <div className={MARKDOWN_STYLES}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
+            </div>
+          )}
+        </div>
+        {body !== '' && <MessageActions content={body} />}
+      </div>
+    </div>
+  );
+}
+
 export default function MessageList({ messages }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -107,31 +236,7 @@ export default function MessageList({ messages }: Props) {
               </span>
             </div>
           ) : (
-            <div key={msg.id} className="flex animate-[fadeInUp_0.25s_ease-out] items-start gap-3">
-              <Logo size={32} className="mt-1" />
-              <div className="min-w-0 flex-1">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-                  {msg.content === '' ? (
-                    <div className="flex gap-1 py-1">
-                      <span className="h-1.5 w-1.5 animate-[bounce-dot_1.2s_ease-in-out_infinite] rounded-full bg-slate-500" />
-                      <span
-                        className="h-1.5 w-1.5 animate-[bounce-dot_1.2s_ease-in-out_infinite] rounded-full bg-slate-500"
-                        style={{ animationDelay: '0.15s' }}
-                      />
-                      <span
-                        className="h-1.5 w-1.5 animate-[bounce-dot_1.2s_ease-in-out_infinite] rounded-full bg-slate-500"
-                        style={{ animationDelay: '0.3s' }}
-                      />
-                    </div>
-                  ) : (
-                    <div className={MARKDOWN_STYLES}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                    </div>
-                  )}
-                </div>
-                {msg.content !== '' && <MessageActions content={msg.content} />}
-              </div>
-            </div>
+            <AssistantMessage key={msg.id} content={msg.content} />
           )
         )}
         <div ref={bottomRef} />
