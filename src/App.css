@@ -23,3 +23,13 @@
     opacity: 1;
   }
 }
+
+/* Mobile polish: no accidental pull-to-refresh while chatting, no grey flash on tap. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+}

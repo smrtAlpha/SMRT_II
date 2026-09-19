@@ -61,7 +61,7 @@ function App() {
         onClose={() => setSidebarOpen(false)}
         onAddPack={() => setShowUpload(true)}
       />
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-slate-50/60">
         <TopBar
           localModel={localModel}
           isOnline={isOnline}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { User, Copy, Check, ThumbsUp, ThumbsDown, MoreHorizontal } from 'lucide-react';
+import { User, Copy, Check, ThumbsUp, ThumbsDown, MoreHorizontal, FileText } from 'lucide-react';
 import Logo from './Logo';
 import type { ChatMessage } from '../types';
 
@@ -67,14 +67,40 @@ export default function MessageList({ messages }: Props) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Nothing to show yet: a friendly welcome instead of a blank screen.
+  if (messages.length === 0) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+        <Logo size={56} className="mb-2 rounded-2xl" />
+        <h2 className="text-xl font-semibold text-blue-950">Ask SMRT anything</h2>
+        <p className="max-w-xs text-sm text-slate-500">Your study companion. It keeps working even when you're offline.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 py-3">
         {messages.map((msg) =>
           msg.role === 'user' ? (
             <div key={msg.id} className="flex animate-[fadeInUp_0.25s_ease-out] items-start justify-end gap-3">
-              <div className="max-w-[85%] rounded-2xl bg-blue-100 px-4 py-2.5 text-sm whitespace-pre-wrap text-slate-900 md:max-w-[75%]">
-                {msg.content}
+              <div className="flex max-w-[85%] flex-col items-end gap-1.5 md:max-w-[75%]">
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    {msg.attachments.map((name, i) => (
+                      <span
+                        key={`${name}-${i}`}
+                        className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-2.5 py-1 text-xs text-blue-800"
+                      >
+                        <FileText size={14} className="shrink-0" />
+                        <span className="max-w-[14rem] truncate">{name}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="rounded-2xl bg-blue-100 px-4 py-2.5 text-sm whitespace-pre-wrap text-slate-900">
+                  {msg.content}
+                </div>
               </div>
               <span className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 sm:flex">
                 <User size={18} />

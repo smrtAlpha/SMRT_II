@@ -44,6 +44,18 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  // Names of files attached to this message (user messages only)
+  attachmentNames?: string[];
+}
+
+// A file the user attached to one specific chat. `text` is the extracted text of the file.
+export interface Attachment {
+  id: string;
+  conversationId: string;
+  userId: string;
+  fileName: string;
+  text: string;
+  timestamp: number;
 }
 
 class SmrtDatabase extends Dexie {
@@ -52,6 +64,7 @@ class SmrtDatabase extends Dexie {
   researchQueue!: Table<ResearchTask, string>;
   conversations!: Table<Conversation, string>;
   messages!: Table<Message, string>;
+  attachments!: Table<Attachment, string>;
 
   constructor() {
     super('smrt-db');
@@ -73,6 +86,14 @@ class SmrtDatabase extends Dexie {
       researchQueue: 'id, userId, status, createdAt',
       conversations: 'id, userId, updatedAt',
       messages: 'id, conversationId, timestamp',
+    });
+    this.version(5).stores({
+      qaHistory: 'id, userId, timestamp',
+      knowledgePacks: 'id, userId, subject, timestamp',
+      researchQueue: 'id, userId, status, createdAt',
+      conversations: 'id, userId, updatedAt',
+      messages: 'id, conversationId, timestamp',
+      attachments: 'id, conversationId, userId, timestamp',
     });
   }
 }
