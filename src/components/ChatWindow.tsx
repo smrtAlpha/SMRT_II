@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CheckCircle2, Cpu } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import type { ChatMessage } from '../types';
@@ -11,9 +11,8 @@ import { createConversation } from '../lib/conversations';
 import { useOnlineStatus } from '../lib/useOnlineStatus';
 import { searchLocalHistory } from '../lib/localSearch';
 import { findRelevantKnowledgePack } from '../lib/knowledgePackSearch';
-import { useLocalModel } from '../lib/useLocalModel';
+import type { useLocalModel } from '../lib/useLocalModel';
 import { generateLocalReply } from '../lib/localModel';
-
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-chat`;
 
@@ -21,6 +20,8 @@ type Props = {
   userId: string;
   conversationId: string | null;
   onNewConversation: (id: string) => void;
+  // Offline-AI state now lives in App so the header badge and this chat share it.
+  localModel: ReturnType<typeof useLocalModel>;
 };
 
 function buildAugmentedPrompt(query: string, pack: KnowledgePack | null): string {
@@ -33,11 +34,10 @@ ${pack.summary}
 QUESTION: ${query}`;
 }
 
-export default function ChatWindow({ userId, conversationId, onNewConversation }: Props) {
+export default function ChatWindow({ userId, conversationId, onNewConversation, localModel }: Props) {
   const [isLoading, setIsLoading] = useState(false);
   const [transientMessages, setTransientMessages] = useState<ChatMessage[]>([]);
   const isOnline = useOnlineStatus();
-  const localModel = useLocalModel();
 
   const [showReadyBanner, setShowReadyBanner] = useState(false);
   const wasReady = useRef(false);
@@ -55,13 +55,13 @@ export default function ChatWindow({ userId, conversationId, onNewConversation }
     setTransientMessages([]);
   }, [conversationId]);
 
-const persistedMessages = useLiveQuery(
-  (): Promise<Message[]> =>
-    conversationId
-      ? db.messages.where('conversationId').equals(conversationId).sortBy('timestamp')
-      : Promise.resolve([]),
-  [conversationId]
-);
+  const persistedMessages = useLiveQuery(
+    (): Promise<Message[]> =>
+      conversationId
+        ? db.messages.where('conversationId').equals(conversationId).sortBy('timestamp')
+        : Promise.resolve([]),
+    [conversationId]
+  );
 
   const messages: ChatMessage[] = [
     ...(persistedMessages ?? []).map((m) => ({ id: m.id, role: m.role, content: m.content })),
@@ -108,7 +108,8 @@ const persistedMessages = useLiveQuery(
         content = 'Your offline AI hit an error. Try again.';
       }
     } else {
-      content = "No cached answer for this, and your offline AI isn't downloaded yet — see below.";
+      content =
+        "No cached answer for this, and your offline AI isn't downloaded yet. Tap “Get Offline AI” at the top when you're back online (about 880 MB, best on Wi-Fi).";
     }
 
     await persistExchange(convId, userMsg.content, content, assistantId);
@@ -190,20 +191,9 @@ const persistedMessages = useLiveQuery(
           Offline AI downloaded and ready to use.
         </div>
       )}
-      {!localModel.isReady && (
-        <div className="py-1 text-center text-sm">
-          {localModel.isDownloading ? (
-            <span className="text-slate-500">{localModel.progressText || 'Downloading offline AI...'}</span>
-          ) : (
-            <button
-              onClick={localModel.download}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-400 px-3 py-1.5 text-slate-700 hover:bg-slate-50"
-            >
-              <Cpu size={14} />
-              Download offline AI (~880MB, do this on Wi-Fi)
-            </button>
-          )}
-        </div>
+      {/* Download progress (or a failure message) — the download button itself is now the header badge. */}
+      {!localModel.isReady && localModel.progressText && (
+        <p className="py-1 text-center text-sm text-slate-500">{localModel.progressText}</p>
       )}
       <MessageInput onSend={handleSend} disabled={isLoading} />
     </div>

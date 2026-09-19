@@ -1,24 +1,22 @@
-import { useEffect, useState } from 'react';
-import { db, type ResearchTask } from '../lib/db';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../lib/db';
 
 type Props = { userId: string };
 
 export default function ResearchQueueList({ userId }: Props) {
-  const [tasks, setTasks] = useState<ResearchTask[]>([]);
+  const tasks = useLiveQuery(
+    () => db.researchQueue.where('userId').equals(userId).reverse().sortBy('createdAt'),
+    [userId]
+  );
 
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      const all = await db.researchQueue.where('userId').equals(userId).reverse().sortBy('createdAt');
-      setTasks(all);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [userId]);
+  if (!tasks) return null;
 
-  if (tasks.length === 0) return null;
+  if (tasks.length === 0) {
+    return <p className="text-sm text-slate-400">No research tasks yet.</p>;
+  }
 
   return (
-    <div className="mb-2 text-sm">
-      <h3 className="mb-1 font-medium text-slate-600">Research Queue</h3>
+    <div className="text-sm">
       {tasks.map((task) => (
         <details key={task.id} className="border-b border-slate-100 py-1.5">
           <summary className="cursor-pointer">
