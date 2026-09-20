@@ -14,20 +14,25 @@ import {
   History,
   Info,
   GraduationCap,
+  RotateCcw,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Logo from './Logo';
+import { splitLabels } from '../lib/messageLabels';
 import type { ChatMessage } from '../types';
 
 type Props = {
   messages: ChatMessage[];
+  // Retry is offered on the newest answer, and only while nothing is being generated.
+  canRetry?: boolean;
+  onRetry?: (messageId: string) => void;
 };
 
 const ACTION_BUTTON =
   'flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600';
 
 // Row of small buttons under each assistant message. Only "Copy" is real for now.
-function MessageActions({ content }: { content: string }) {
+function MessageActions({ content, onRetry }: { content: string; onRetry?: () => void }) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -51,6 +56,11 @@ function MessageActions({ content }: { content: string }) {
       <button type="button" title="Bad answer — coming soon" aria-label="Bad answer" className={ACTION_BUTTON}>
         <ThumbsDown size={16} />
       </button>
+      {onRetry && (
+        <button type="button" onClick={onRetry} title="Try again" aria-label="Try again" className={ACTION_BUTTON}>
+          <RotateCcw size={16} />
+        </button>
+      )}
       <button type="button" title="More — coming soon" aria-label="More options" className={ACTION_BUTTON}>
         <MoreHorizontal size={16} />
       </button>
@@ -73,47 +83,6 @@ const MARKDOWN_STYLES = [
   '[&_th]:min-w-24 [&_th]:bg-blue-50 [&_th]:px-3 [&_th]:py-2 [&_th]:font-semibold [&_th]:text-blue-950',
   '[&_td]:min-w-24 [&_td]:border-t [&_td]:border-slate-200 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top',
 ].join(' ');
-
-// Answers can start with short "source notes": the app writes some (like *(using your Biology knowledge pack)*),
-// and the AI is asked to start with a tag: [[FROM_FILE]] or [[OUTSIDE]]. We pull these out of the text
-// and show them as small badges, so they don't mix into the answer.
-const TAG_PATTERN = /^\s*[*_]{0,2}\[\[\s*(FROM_FILE|OUTSIDE)\s*\]\][*_]{0,2}/;
-const NOTE_PATTERN = /^\s*((?:\*\*|\*|_)?)\(([^()]{1,200})\)((?:\*\*|\*|_)?)/;
-
-const TAG_LABELS: Record<string, string> = {
-  FROM_FILE: 'From your attached file',
-  OUTSIDE: 'Not found in your attached file. This answer is from outside sources.',
-};
-
-function splitLabels(content: string): { labels: string[]; body: string } {
-  const labels: string[] = [];
-  let rest = content;
-
-  while (true) {
-    const tag = rest.match(TAG_PATTERN);
-    if (tag) {
-      labels.push(TAG_LABELS[tag[1]]);
-      rest = rest.slice(tag[0].length);
-      continue;
-    }
-    // A note in brackets. Only treated as a note if it has italic markers around it,
-    // or it talks about the attached file (so a normal answer starting with "(a) ..." is left alone).
-    const note = rest.match(NOTE_PATTERN);
-    if (note && (note[1] !== '' || /attached file/i.test(note[2]))) {
-      labels.push(note[2].trim());
-      rest = rest.slice(note[0].length);
-      continue;
-    }
-    break;
-  }
-
-  const trimmed = rest.trimStart();
-  // A tag or note that is still being typed out: hold it back so raw text doesn't flash on screen.
-  const stillTyping =
-    /^[*_]{0,2}\[{1,2}[A-Z_]*\]?$/.test(trimmed) ||
-    (/^(?:\*\*|\*|_)\(/.test(trimmed) && !/\)(?:\*\*|\*|_)/.test(trimmed) && trimmed.length < 250);
-  return { labels, body: stillTyping ? '' : trimmed };
-}
 
 function capitalize(text: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -141,7 +110,7 @@ function badgeFor(label: string): BadgeStyle {
   return { Icon: Info, className: 'bg-slate-100 text-slate-600', text: capitalize(label) };
 }
 
-function AssistantMessage({ content }: { content: string }) {
+function AssistantMessage({ content, onRetry }: { content: string; onRetry?: () => void }) {
   const { labels, body } = splitLabels(content);
 
   return (
@@ -183,13 +152,13 @@ function AssistantMessage({ content }: { content: string }) {
             </div>
           )}
         </div>
-        {body !== '' && <MessageActions content={body} />}
+        {body !== '' && <MessageActions content={body} onRetry={onRetry} />}
       </div>
     </div>
   );
 }
 
-export default function MessageList({ messages }: Props) {
+export default function MessageList({ messages, canRetry = false, onRetry }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -210,7 +179,7 @@ export default function MessageList({ messages }: Props) {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 py-3">
-        {messages.map((msg) =>
+        {messages.map((msg, index) =>
           msg.role === 'user' ? (
             <div key={msg.id} className="flex animate-[fadeInUp_0.25s_ease-out] items-start justify-end gap-3">
               <div className="flex max-w-[85%] flex-col items-end gap-1.5 md:max-w-[75%]">
@@ -236,7 +205,15 @@ export default function MessageList({ messages }: Props) {
               </span>
             </div>
           ) : (
-            <AssistantMessage key={msg.id} content={msg.content} />
+            <AssistantMessage
+              key={msg.id}
+              content={msg.content}
+              onRetry={
+                canRetry && onRetry && index === messages.length - 1 && messages[index - 1]?.role === 'user'
+                  ? () => onRetry(msg.id)
+                  : undefined
+              }
+            />
           )
         )}
         <div ref={bottomRef} />

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import ChatWindow from './components/ChatWindow';
 import IconRail from './components/IconRail';
@@ -7,6 +7,7 @@ import TopBar from './components/TopBar';
 import StatusBar from './components/StatusBar';
 import Modal from './components/Modal';
 import KnowledgePackUpload from './components/KnowledgePackUpload';
+import NotificationToggle from './components/NotificationToggle';
 import ResearchQueueForm from './components/ResearchQueueForm';
 import ResearchQueueList from './components/ResearchQueueList';
 import { useAuth } from './lib/useAuth';
@@ -29,6 +30,19 @@ function App() {
   const [showQueue, setShowQueue] = useState(false);
 
   const userId = user?.id ?? '';
+
+  // Tapping a "research finished" notification opens the research queue.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('queue') === '1') {
+      setShowQueue(true);
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+    function handleMessage(event: MessageEvent) {
+      if (event.data?.type === 'open-queue') setShowQueue(true);
+    }
+    navigator.serviceWorker?.addEventListener('message', handleMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', handleMessage);
+  }, []);
 
   // How many research tasks are still waiting to sync (drives the Sync dot).
   const pendingCount =
@@ -87,6 +101,7 @@ function App() {
 
       {showQueue && (
         <Modal title="Research queue" onClose={() => setShowQueue(false)}>
+          <NotificationToggle />
           <ResearchQueueForm userId={userId} />
           <ResearchQueueList userId={userId} />
         </Modal>

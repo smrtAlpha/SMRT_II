@@ -12,9 +12,10 @@ import { useOnlineStatus } from '../lib/useOnlineStatus';
 import { searchLocalHistory } from '../lib/localSearch';
 import { findRelevantKnowledgePack } from '../lib/knowledgePackSearch';
 import type { useLocalModel } from '../lib/useLocalModel';
-import { generateLocalReply } from '../lib/localModel';
+import { generateLocalReply, stopLocalGeneration } from '../lib/localModel';
 import { NO_PACK, AUTO_PACK } from '../lib/packChoice';
 import { extractTextFromFile } from '../lib/extractText';
+import { splitLabels } from '../lib/messageLabels';
 import {
   MAX_FILE_BYTES,
   ONLINE_ATTACHMENT_BUDGET,
@@ -27,13 +28,34 @@ import type { PendingFile } from '../lib/attachments';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-chat`;
 
+// Shown as the answer when you press Stop before SMRT has written anything.
+const STOPPED_TEXT = 'Stopped before SMRT answered.';
+
 type Props = {
   userId: string;
   conversationId: string | null;
   onNewConversation: (id: string) => void;
-  // Offline-AI state now lives in App so the header badge and this chat share it.
+  // Offline-AI state lives in App so the header badge and this chat share it.
   localModel: ReturnType<typeof useLocalModel>;
 };
+
+// One request for an answer. A retry has no userMsg, because the question is already saved.
+type AnswerJob = {
+  convId: string;
+  question: string;
+  userMsg: ChatMessage | null;
+  assistantId: string;
+};
+
+type AnswerResult = {
+  content: string;
+  // Whether the answer may be saved in the offline cache for reuse.
+  cache: boolean;
+};
+
+function isAbortError(err: unknown) {
+  return err instanceof DOMException && err.name === 'AbortError';
+}
 
 function buildAugmentedPrompt(query: string, pack: KnowledgePack | null, attachmentContext: string): string {
   if (!pack && !attachmentContext) return query;
@@ -64,6 +86,11 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
   const [attachError, setAttachError] = useState('');
   const isOnline = useOnlineStatus();
 
+  // For the Stop button
+  const abortRef = useRef<AbortController | null>(null);
+  const localGeneratingRef = useRef(false);
+  const stopRequestedRef = useRef(false);
+
   const [showReadyBanner, setShowReadyBanner] = useState(false);
   const wasReady = useRef(false);
 
@@ -76,17 +103,26 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
     }
   }, [localModel.isReady]);
 
-  // Clear the in-progress messages when the user switches chats, but NOT when the message
-  // being sent just created the chat (that would wipe it and bring the welcome screen back).
+  // Stops whatever answer is being written (online or on-device).
+  function stopGenerating() {
+    stopRequestedRef.current = true;
+    abortRef.current?.abort();
+    if (localGeneratingRef.current) stopLocalGeneration();
+  }
+
+  // When the user switches chats: stop any answer in progress and clear the in-progress messages.
+  // (Not when the message being sent just created the chat: that would wipe it and bring the welcome screen back.)
   const skipNextReset = useRef(false);
   useEffect(() => {
     if (skipNextReset.current) {
       skipNextReset.current = false;
       return;
     }
+    stopGenerating();
     setTransientMessages([]);
     setPendingFiles([]);
     setAttachError('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
   const persistedMessages = useLiveQuery(
@@ -97,41 +133,43 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
     [conversationId]
   );
 
+  // Saved messages, plus the in-progress ones. A message that has just been saved is skipped in the
+  // in-progress list, so it never shows twice for a split second.
+  const savedList = persistedMessages ?? [];
+  const savedIds = new Set(savedList.map((m) => m.id));
   const messages: ChatMessage[] = [
-    ...(persistedMessages ?? []).map((m) => ({
+    ...savedList.map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content,
       attachments: m.attachmentNames,
     })),
-    ...transientMessages,
+    ...transientMessages.filter((m) => !savedIds.has(m.id)),
   ];
 
-  async function persistExchange(
-    convId: string,
-    question: string,
-    answerContent: string,
-    assistantId: string,
-    attachmentNames: string[] = []
-  ) {
+  // Saves the answer (and, for a normal send, the question too).
+  async function saveAnswer(job: AnswerJob, content: string) {
+    const now = Date.now();
+    if (job.userMsg) {
+      await db.messages.add({
+        id: job.userMsg.id,
+        conversationId: job.convId,
+        userId,
+        role: 'user',
+        content: job.question,
+        timestamp: now,
+        attachmentNames: job.userMsg.attachments,
+      });
+    }
     await db.messages.add({
-      id: crypto.randomUUID(),
-      conversationId: convId,
-      userId,
-      role: 'user',
-      content: question,
-      timestamp: Date.now(),
-      attachmentNames: attachmentNames.length > 0 ? attachmentNames : undefined,
-    });
-    await db.messages.add({
-      id: assistantId,
-      conversationId: convId,
+      id: job.assistantId,
+      conversationId: job.convId,
       userId,
       role: 'assistant',
-      content: answerContent,
-      timestamp: Date.now(),
+      content,
+      timestamp: now + 1,
     });
-    await db.conversations.update(convId, { updatedAt: Date.now() });
+    await db.conversations.update(job.convId, { updatedAt: Date.now() });
   }
 
   // Read the chosen file and hold it until the message is sent.
@@ -169,42 +207,163 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
     return (await db.knowledgePacks.get(selectedPackId)) ?? null;
   }
 
-  async function respondOffline(
-    userMsg: ChatMessage,
-    assistantId: string,
-    convId: string,
-    attachments: Attachment[]
-  ) {
+  async function answerOffline(job: AnswerJob, attachments: Attachment[]): Promise<AnswerResult> {
     // Saved answers were written without any attached file, so don't reuse them when a file is attached.
-    const match = attachments.length > 0 ? null : await searchLocalHistory(userId, userMsg.content);
-    let content: string;
+    const match = attachments.length > 0 ? null : await searchLocalHistory(userId, job.question);
 
     if (match) {
-      content = `*(from your offline history — asked ${new Date(match.record.timestamp).toLocaleDateString()})*\n\n${match.record.answer}`;
-    } else if (localModel.isReady) {
-      try {
-        const pack = await resolvePack(userMsg.content);
-        const attachmentContext = buildAttachmentContext(attachments, userMsg.content, OFFLINE_ATTACHMENT_BUDGET);
-        const augmentedPrompt = buildAugmentedPrompt(userMsg.content, pack, attachmentContext);
-        const reply = await generateLocalReply(augmentedPrompt);
-        const label = pack
-          ? `*(generated offline by your on-device AI, using your ${pack.subject} knowledge pack)*`
-          : `*(generated offline by your on-device AI)*`;
-        content = `${label}\n\n${reply}`;
-      } catch (err) {
-        console.error('Local model generation failed:', err);
-        content = 'Your offline AI hit an error. Try again.';
-      }
-    } else {
-      content =
-        "No cached answer for this, and your offline AI isn't downloaded yet. Tap “Get Offline AI” at the top when you're back online (about 880 MB, best on Wi-Fi).";
+      return {
+        content: `*(from your offline history — asked ${new Date(match.record.timestamp).toLocaleDateString()})*\n\n${match.record.answer}`,
+        cache: false,
+      };
     }
 
-    await persistExchange(convId, userMsg.content, content, assistantId, userMsg.attachments);
-    setTransientMessages([]);
+    if (!localModel.isReady) {
+      return {
+        content:
+          "No cached answer for this, and your offline AI isn't downloaded yet. Tap “Get Offline AI” at the top when you're back online (about 880 MB, best on Wi-Fi).",
+        cache: false,
+      };
+    }
+
+    try {
+      const pack = await resolvePack(job.question);
+      const attachmentContext = buildAttachmentContext(attachments, job.question, OFFLINE_ATTACHMENT_BUDGET);
+      const augmentedPrompt = buildAugmentedPrompt(job.question, pack, attachmentContext);
+
+      localGeneratingRef.current = true;
+      let reply: string;
+      try {
+        reply = await generateLocalReply(augmentedPrompt);
+      } finally {
+        localGeneratingRef.current = false;
+      }
+
+      if (!reply.trim()) {
+        return {
+          content: stopRequestedRef.current ? STOPPED_TEXT : 'Your offline AI hit an error. Try again.',
+          cache: false,
+        };
+      }
+      const label = pack
+        ? `*(generated offline by your on-device AI, using your ${pack.subject} knowledge pack)*`
+        : `*(generated offline by your on-device AI)*`;
+      return { content: `${label}\n\n${reply}`, cache: false };
+    } catch (err) {
+      console.error('Local model generation failed:', err);
+      return { content: 'Your offline AI hit an error. Try again.', cache: false };
+    }
+  }
+
+  async function answerOnline(
+    job: AnswerJob,
+    attachments: Attachment[],
+    signal: AbortSignal,
+    onProgress: (text: string) => void
+  ): Promise<AnswerResult> {
+    const pack = await resolvePack(job.question);
+    const attachmentContext = buildAttachmentContext(attachments, job.question, ONLINE_ATTACHMENT_BUDGET);
+    const augmentedPrompt = buildAugmentedPrompt(job.question, pack, attachmentContext);
+
+    const { data: { session } } = await supabase.auth.getSession();
+
+    const res = await fetch(FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session?.access_token}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ prompt: augmentedPrompt }),
+      signal,
+    });
+
+    if (!res.ok || !res.body) {
+      // For these, the server sends a plain-language reason (too fast, daily limit, too large...).
+      if (res.status === 413 || res.status === 429 || res.status === 503) {
+        const data = await res.json().catch(() => null);
+        if (data && typeof data.error === 'string') return { content: data.error, cache: false };
+      }
+      throw new Error(`Request failed with status ${res.status}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulated = pack ? `*(using your ${pack.subject} knowledge pack)*\n\n` : '';
+    onProgress(accumulated);
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      accumulated += decoder.decode(value, { stream: true });
+      onProgress(accumulated);
+    }
+
+    // Answers based on an attached file only make sense for that chat, so don't save them for reuse.
+    return { content: accumulated, cache: attachments.length === 0 };
+  }
+
+  // Produces and saves one answer. Used for both a normal send and a retry.
+  async function runAnswer(job: AnswerJob) {
+    setIsLoading(true);
+    stopRequestedRef.current = false;
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const show = (content: string) => {
+      const placeholder: ChatMessage = { id: job.assistantId, role: 'assistant', content };
+      setTransientMessages(job.userMsg ? [job.userMsg, placeholder] : [placeholder]);
+    };
+    show('');
+
+    let partial = ''; // what has arrived so far, in case you press Stop
+
+    try {
+      const attachments = await getConversationAttachments(job.convId);
+      let result: AnswerResult;
+
+      try {
+        result = isOnline
+          ? await answerOnline(job, attachments, controller.signal, (text) => {
+              partial = text;
+              show(text);
+            })
+          : await answerOffline(job, attachments);
+      } catch (err) {
+        if (isAbortError(err)) {
+          // Keep what was written so far. If nothing real arrived yet, say it was stopped.
+          result = { content: splitLabels(partial).body ? partial : STOPPED_TEXT, cache: false };
+        } else if (err instanceof TypeError) {
+          // The network failed: fall back to the offline path.
+          result = await answerOffline(job, attachments);
+        } else {
+          console.error('Gemini call failed:', err);
+          result = { content: 'Something went wrong reaching SMRT. Please try again.', cache: false };
+        }
+      }
+
+      await saveAnswer(job, result.content);
+      if (result.cache) {
+        await db.qaHistory.add({
+          id: crypto.randomUUID(),
+          userId,
+          question: job.question,
+          answer: result.content,
+          timestamp: Date.now(),
+        });
+      }
+    } catch (err) {
+      console.error('Saving the answer failed:', err);
+    } finally {
+      setTransientMessages([]);
+      if (abortRef.current === controller) abortRef.current = null;
+      setIsLoading(false);
+    }
   }
 
   async function handleSend(text: string) {
+    if (isLoading) return;
+
     // Show the files attached to this message on the message itself.
     const attachedNames = pendingFiles.map((f) => f.name);
     const userMsg: ChatMessage = {
@@ -217,94 +376,79 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
     setTransientMessages([userMsg, { id: assistantId, role: 'assistant', content: '' }]);
     setIsLoading(true);
 
-    const convId: string = conversationId ?? (await createConversation(userId, text));
-    if (!conversationId) {
-      skipNextReset.current = true;
-      onNewConversation(convId);
-    }
+    try {
+      const convId: string = conversationId ?? (await createConversation(userId, text));
+      if (!conversationId) {
+        skipNextReset.current = true;
+        onNewConversation(convId);
+      }
 
-    // Save any files attached to this message, then load every file attached to this chat so far.
-    if (pendingFiles.length > 0) {
-      await saveAttachments(userId, convId, pendingFiles);
-      setPendingFiles([]);
-    }
-    const attachments = await getConversationAttachments(convId);
+      // Save any files attached to this message.
+      if (pendingFiles.length > 0) {
+        await saveAttachments(userId, convId, pendingFiles);
+        setPendingFiles([]);
+      }
 
-    if (!isOnline) {
-      await respondOffline(userMsg, assistantId, convId, attachments);
+      await runAnswer({ convId, question: text, userMsg, assistantId });
+    } catch (err) {
+      console.error('Sending failed:', err);
+      setTransientMessages([]);
       setIsLoading(false);
-      return;
     }
+  }
+
+  // Write a fresh answer to the question above the given answer, replacing it.
+  async function handleRetry(assistantMessageId: string) {
+    if (isLoading || !conversationId) return;
+
+    const list = persistedMessages ?? [];
+    const index = list.findIndex((m) => m.id === assistantMessageId);
+    const questionMsg = index > 0 ? list[index - 1] : undefined;
+    if (!questionMsg || questionMsg.role !== 'user') return;
+
+    const assistantId = crypto.randomUUID();
+    setIsLoading(true);
+    setTransientMessages([{ id: assistantId, role: 'assistant', content: '' }]);
 
     try {
-      const pack = await resolvePack(text);
-      const attachmentContext = buildAttachmentContext(attachments, text, ONLINE_ATTACHMENT_BUDGET);
-      const augmentedPrompt = buildAugmentedPrompt(text, pack, attachmentContext);
+      await db.messages.delete(assistantMessageId);
+      // Forget the old saved answer to this question, so offline mode can't hand the same one back.
+      await db.qaHistory
+        .where('userId')
+        .equals(userId)
+        .filter((record) => record.question === questionMsg.content)
+        .delete();
 
-      const { data: { session } } = await supabase.auth.getSession();
-
-      const res = await fetch(FUNCTION_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token}`,
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ prompt: augmentedPrompt }),
+      await runAnswer({
+        convId: conversationId,
+        question: questionMsg.content,
+        userMsg: null,
+        assistantId,
       });
-
-      if (!res.ok || !res.body) {
-        throw new Error(`Request failed with status ${res.status}`);
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = pack ? `*(using your ${pack.subject} knowledge pack)*\n\n` : '';
-
-      setTransientMessages([userMsg, { id: assistantId, role: 'assistant', content: accumulated }]);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        setTransientMessages([userMsg, { id: assistantId, role: 'assistant', content: accumulated }]);
-      }
-
-      await persistExchange(convId, text, accumulated, assistantId, userMsg.attachments);
-      // Answers based on an attached file only make sense for that chat, so don't save them for reuse.
-      if (attachments.length === 0) {
-        await db.qaHistory.add({ id: crypto.randomUUID(), userId, question: text, answer: accumulated, timestamp: Date.now() });
-      }
-      setTransientMessages([]);
     } catch (err) {
-      if (err instanceof TypeError) {
-        await respondOffline(userMsg, assistantId, convId, attachments);
-      } else {
-        console.error('Gemini call failed:', err);
-        await persistExchange(convId, text, 'Something went wrong reaching SMRT. Please try again.', assistantId, userMsg.attachments);
-        setTransientMessages([]);
-      }
-    } finally {
+      console.error('Retry failed:', err);
+      setTransientMessages([]);
       setIsLoading(false);
     }
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <MessageList messages={messages} />
+      <MessageList messages={messages} canRetry={!isLoading} onRetry={handleRetry} />
       {showReadyBanner && (
         <div className="flex items-center justify-center gap-1.5 py-1 text-sm font-medium text-green-700">
           <CheckCircle2 size={14} />
           Offline AI downloaded and ready to use.
         </div>
       )}
-      {/* Download progress (or a failure message) — the download button itself is now the header badge. */}
+      {/* Download progress (or a failure message) — the download button itself is the header badge. */}
       {!localModel.isReady && localModel.progressText && (
         <p className="py-1 text-center text-sm text-slate-500">{localModel.progressText}</p>
       )}
       <MessageInput
         onSend={handleSend}
-        disabled={isLoading}
+        isGenerating={isLoading}
+        onStop={stopGenerating}
         userId={userId}
         selectedPackId={selectedPackId}
         onSelectPack={setSelectedPackId}

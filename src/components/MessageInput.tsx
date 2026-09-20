@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
-import { Paperclip, AudioLines, ArrowUp, FileText, Loader2, X } from 'lucide-react';
+import { Paperclip, AudioLines, ArrowUp, Square, FileText, Loader2, X } from 'lucide-react';
 import KnowledgePackPicker from './KnowledgePackPicker';
 
 type Props = {
   onSend: (text: string) => void;
-  disabled?: boolean;
+  // True while SMRT is writing an answer: you can keep typing, and Send turns into Stop.
+  isGenerating: boolean;
+  onStop: () => void;
   userId: string;
   selectedPackId: string;
   onSelectPack: (id: string) => void;
@@ -22,7 +24,8 @@ const PILL_BUTTON =
 
 export default function MessageInput({
   onSend,
-  disabled,
+  isGenerating,
+  onStop,
   userId,
   selectedPackId,
   onSelectPack,
@@ -37,7 +40,7 @@ export default function MessageInput({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!value.trim()) return;
+    if (isGenerating || !value.trim()) return;
     onSend(value.trim());
     setValue('');
   }
@@ -113,8 +116,7 @@ export default function MessageInput({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={attachments.length > 0 ? 'Ask about your attached file...' : 'Ask SMRT anything...'}
-            disabled={disabled}
-            className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-50"
+            className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
           />
         </div>
 
@@ -137,15 +139,27 @@ export default function MessageInput({
             <AudioLines size={16} />
             <span className="hidden sm:inline">Voice</span>
           </button>
-          <button
-            type="submit"
-            disabled={disabled || readingFile}
-            aria-label="Send"
-            className="flex h-10 items-center justify-center gap-2 rounded-full bg-blue-700 px-3 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5"
-          >
-            <ArrowUp size={16} />
-            <span className="hidden sm:inline">Send</span>
-          </button>
+          {isGenerating ? (
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label="Stop"
+              className="flex h-10 items-center justify-center gap-2 rounded-full bg-slate-800 px-3 text-sm font-medium text-white hover:bg-slate-900 sm:px-5"
+            >
+              <Square size={14} className="fill-current" />
+              <span className="hidden sm:inline">Stop</span>
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={readingFile}
+              aria-label="Send"
+              className="flex h-10 items-center justify-center gap-2 rounded-full bg-blue-700 px-3 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5"
+            >
+              <ArrowUp size={16} />
+              <span className="hidden sm:inline">Send</span>
+            </button>
+          )}
         </div>
       </div>
     </form>

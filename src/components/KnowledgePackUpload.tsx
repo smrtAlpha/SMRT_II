@@ -41,7 +41,11 @@ export default function KnowledgePackUpload({ userId }: Props) {
         body: JSON.stringify({ text: rawText }),
       });
 
-      if (!res.ok) throw new Error(`Summarization failed (${res.status})`);
+      if (!res.ok) {
+        // The server explains limits in plain words (e.g. "reached today's limit").
+        const data = await res.json().catch(() => null);
+        throw new Error(typeof data?.error === 'string' ? data.error : `Summarization failed (${res.status})`);
+      }
       const { summary } = await res.json();
 
       await db.knowledgePacks.add({

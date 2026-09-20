@@ -33,3 +33,8 @@ export async function generateLocalReply(prompt: string): Promise<string> {
   });
   return response.choices[0]?.message?.content ?? '';
 }
+
+// Stops the on-device AI mid-answer. The reply written so far is still returned by generateLocalReply.
+export function stopLocalGeneration() {
+  void engine?.interruptGenerate();
+}
