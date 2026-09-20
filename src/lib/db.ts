@@ -21,7 +21,7 @@ export interface ResearchTask {
   id: string;
   userId: string;
   query: string;
-  status: 'pending' | 'completed' | 'failed';
+  status: 'pending' | 'paused' | 'completed' | 'failed';
   result?: string;
   errorMessage?: string;
   accessToken: string;
@@ -46,6 +46,8 @@ export interface Message {
   timestamp: number;
   // Names of files attached to this message (user messages only)
   attachmentNames?: string[];
+  // True when this "answer" is really an error or a stopped answer, so it isn't used as chat memory
+  failed?: boolean;
 }
 
 // A file the user attached to one specific chat. `text` is the extracted text of the file.

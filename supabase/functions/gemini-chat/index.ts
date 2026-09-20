@@ -23,6 +23,30 @@ const MODEL_FALLBACK_LIST = ['gemini-3.5-flash', 'gemini-3.1-flash-lite'];
 // Attached files can make prompts big, but not unlimited.
 const MAX_PROMPT_CHARS = 300_000;
 
+// Earlier messages of the chat ("memory"). Same limits as the app, with some room to spare.
+const MAX_HISTORY_TURNS = 40;
+const MAX_HISTORY_CHARS = 80_000;
+
+type HistoryTurn = { role: 'user' | 'assistant'; content: string };
+
+// Returns the earlier messages if they look right, or null if something is wrong with them.
+// They must go: user, assistant, user, assistant... and end on an assistant message.
+function parseHistory(raw: unknown): HistoryTurn[] | null {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > MAX_HISTORY_TURNS || raw.length % 2 !== 0) return null;
+
+  const turns: HistoryTurn[] = [];
+  let totalChars = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
+    const expectedRole = i % 2 === 0 ? 'user' : 'assistant';
+    if (!item || item.role !== expectedRole || typeof item.content !== 'string' || item.content === '') return null;
+    totalChars += item.content.length;
+    turns.push({ role: expectedRole, content: item.content });
+  }
+  return totalChars > MAX_HISTORY_CHARS ? null : turns;
+}
+
 // Asks the database whether this user may make another request in this "bucket".
 // Returns 'ok', 'limited' (over the limit), or 'error' (couldn't check).
 async function checkLimit(req: Request, bucket: string): Promise<'ok' | 'limited' | 'error'> {
@@ -75,14 +99,14 @@ function createTextExtractorStream() {
   });
 }
 
-async function getWorkingStream(prompt: string, apiKey: string) {
+async function getWorkingStream(contents: unknown[], apiKey: string) {
   for (const model of MODEL_FALLBACK_LIST) {
     for (let attempt = 0; attempt <= 1; attempt++) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        body: JSON.stringify({ contents }),
       });
 
       if (res.ok && res.body) {
@@ -115,12 +139,16 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { prompt } = await req.json();
+    const { prompt, history: rawHistory } = await req.json();
     if (!prompt || typeof prompt !== 'string') {
       return json({ error: 'Missing prompt' }, 400);
     }
     if (prompt.length > MAX_PROMPT_CHARS) {
       return json({ error: 'That message is too large.' }, 413);
+    }
+    const history = parseHistory(rawHistory);
+    if (history === null) {
+      return json({ error: 'The earlier messages were not in the right format.' }, 400);
     }
 
     // Two checks: a short burst limit, then a daily limit.
@@ -144,7 +172,15 @@ Deno.serve(async (req) => {
     }
 
     const apiKey = Deno.env.get('GEMINI_API_KEY') ?? '';
-    const result = await getWorkingStream(prompt, apiKey);
+    // Earlier messages first, then the new question.
+    const contents = [
+      ...history.map((turn) => ({
+        role: turn.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: turn.content }],
+      })),
+      { role: 'user', parts: [{ text: prompt }] },
+    ];
+    const result = await getWorkingStream(contents, apiKey);
 
     if (!result) {
       return json({ error: 'All models are currently unavailable.' }, 502);

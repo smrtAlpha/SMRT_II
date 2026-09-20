@@ -12,6 +12,7 @@ import ResearchQueueForm from './components/ResearchQueueForm';
 import ResearchQueueList from './components/ResearchQueueList';
 import { useAuth } from './lib/useAuth';
 import { useOnlineStatus } from './lib/useOnlineStatus';
+import { refreshPendingResearchTasks } from './lib/refreshPendingTasks';
 import { useLocalModel } from './lib/useLocalModel';
 import { db } from './lib/db';
 import { WifiOff } from 'lucide-react';
@@ -30,6 +31,17 @@ function App() {
   const [showQueue, setShowQueue] = useState(false);
 
   const userId = user?.id ?? '';
+
+  // Waiting research tasks get a fresh login token when the app opens and whenever the connection returns.
+  useEffect(() => {
+    if (!userId) return;
+    const refresh = () => {
+      refreshPendingResearchTasks(userId).catch((err) => console.error('Refreshing waiting tasks failed:', err));
+    };
+    refresh();
+    window.addEventListener('online', refresh);
+    return () => window.removeEventListener('online', refresh);
+  }, [userId]);
 
   // Tapping a "research finished" notification opens the research queue.
   useEffect(() => {

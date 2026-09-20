@@ -59,6 +59,10 @@ async function processResearchQueue() {
   const pending = await db.researchQueue.where('status').equals('pending').toArray();
 
   for (const task of pending) {
+    // The task may have been paused or deleted since the list was loaded.
+    const current = await db.researchQueue.get(task.id);
+    if (!current || current.status !== 'pending') continue;
+
     try {
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/research-task`, {
         method: 'POST',
@@ -69,6 +73,13 @@ async function processResearchQueue() {
         },
         body: JSON.stringify({ query: task.query }),
       });
+
+      if (res.status === 401) {
+        // The login token expired while the task was waiting. Leave the task pending: the app gives it
+        // a fresh token the next time it opens, then runs it again.
+        console.warn('[SW] Login token expired for task', task.id, '- keeping it pending');
+        continue;
+      }
 
       if (!res.ok) {
         const errBody = await res.text().catch(() => '');

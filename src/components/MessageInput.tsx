@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
-import { Paperclip, AudioLines, ArrowUp, Square, FileText, Loader2, X } from 'lucide-react';
+import { Paperclip, AudioLines, Mic, ArrowUp, Square, FileText, Loader2, X } from 'lucide-react';
 import KnowledgePackPicker from './KnowledgePackPicker';
+import { useSpeechRecognition } from '../lib/useSpeechRecognition';
 
 type Props = {
   onSend: (text: string) => void;
@@ -38,9 +39,26 @@ export default function MessageInput({
   const [value, setValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Voice typing: what you say is added after whatever was already in the box.
+  const textBeforeVoice = useRef('');
+  const speech = useSpeechRecognition((transcript) => {
+    const before = textBeforeVoice.current.trimEnd();
+    setValue(before ? `${before} ${transcript}` : transcript);
+  });
+
+  function toggleVoice() {
+    if (speech.listening) {
+      speech.stop();
+      return;
+    }
+    textBeforeVoice.current = value;
+    speech.start();
+  }
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (isGenerating || !value.trim()) return;
+    speech.abort(); // stop listening, and ignore any words still on their way
     onSend(value.trim());
     setValue('');
   }
@@ -100,6 +118,7 @@ export default function MessageInput({
       )}
 
       {attachError && <p className="mb-2 text-xs text-red-600">{attachError}</p>}
+      {speech.error && <p className="mb-2 text-xs text-red-600">{speech.error}</p>}
 
       <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2">
         {/* Row 1: paperclip icon + text box */}
@@ -114,8 +133,17 @@ export default function MessageInput({
           </button>
           <input
             value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder={attachments.length > 0 ? 'Ask about your attached file...' : 'Ask SMRT anything...'}
+            onChange={(e) => {
+              if (speech.listening) speech.abort(); // typing by hand ends voice typing
+              setValue(e.target.value);
+            }}
+            placeholder={
+              speech.listening
+                ? 'Listening… speak now'
+                : attachments.length > 0
+                  ? 'Ask about your attached file...'
+                  : 'Ask SMRT anything...'
+            }
             className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
           />
         </div>
@@ -123,7 +151,7 @@ export default function MessageInput({
         {/* Row 2 (left): choose which knowledge pack SMRT uses */}
         <KnowledgePackPicker userId={userId} selectedPackId={selectedPackId} onSelect={onSelectPack} />
 
-        {/* Right side: Attach (real), Voice (placeholder) and Send (real) */}
+        {/* Right side: Attach, Voice and Send */}
         <div className="flex items-center gap-2 sm:col-start-2 sm:row-span-2 sm:row-start-1">
           <button
             type="button"
@@ -135,9 +163,27 @@ export default function MessageInput({
             <Paperclip size={16} />
             <span className="hidden sm:inline">Attach</span>
           </button>
-          <button type="button" title="Voice input — coming soon" aria-label="Voice" className={PILL_BUTTON}>
-            <AudioLines size={16} />
-            <span className="hidden sm:inline">Voice</span>
+          <button
+            type="button"
+            onClick={toggleVoice}
+            disabled={!speech.supported}
+            aria-label={speech.listening ? 'Stop voice typing' : 'Voice typing'}
+            aria-pressed={speech.listening}
+            title={
+              !speech.supported
+                ? "Voice typing isn't supported in this browser"
+                : speech.listening
+                  ? 'Tap to finish'
+                  : 'Speak your question (your browser sends the audio to its speech service)'
+            }
+            className={
+              speech.listening
+                ? 'flex h-10 items-center justify-center gap-2 rounded-full border border-red-300 bg-red-50 px-3 text-sm font-medium text-red-600 hover:bg-red-100 sm:px-4'
+                : `${PILL_BUTTON} disabled:cursor-not-allowed disabled:opacity-50`
+            }
+          >
+            {speech.listening ? <Mic size={16} className="animate-pulse" /> : <AudioLines size={16} />}
+            <span className="hidden sm:inline">{speech.listening ? 'Listening…' : 'Voice'}</span>
           </button>
           {isGenerating ? (
             <button

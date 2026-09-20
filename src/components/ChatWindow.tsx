@@ -16,6 +16,8 @@ import { generateLocalReply, stopLocalGeneration } from '../lib/localModel';
 import { NO_PACK, AUTO_PACK } from '../lib/packChoice';
 import { extractTextFromFile } from '../lib/extractText';
 import { splitLabels } from '../lib/messageLabels';
+import { buildHistory, lastQuestionIn, ONLINE_HISTORY, OFFLINE_HISTORY } from '../lib/chatHistory';
+import type { HistoryTurn } from '../lib/chatHistory';
 import {
   MAX_FILE_BYTES,
   ONLINE_ATTACHMENT_BUDGET,
@@ -51,6 +53,8 @@ type AnswerResult = {
   content: string;
   // Whether the answer may be saved in the offline cache for reuse.
   cache: boolean;
+  // True when this is really an error or a stopped answer, so it is never used as chat memory.
+  failed?: boolean;
 };
 
 function isAbortError(err: unknown) {
@@ -148,7 +152,9 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
   ];
 
   // Saves the answer (and, for a normal send, the question too).
-  async function saveAnswer(job: AnswerJob, content: string) {
+  // Returns false if the chat was deleted while the answer was being written (nothing is saved then).
+  async function saveAnswer(job: AnswerJob, content: string, failed = false): Promise<boolean> {
+    if (!(await db.conversations.get(job.convId))) return false;
     const now = Date.now();
     if (job.userMsg) {
       await db.messages.add({
@@ -168,8 +174,10 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
       role: 'assistant',
       content,
       timestamp: now + 1,
+      failed: failed || undefined,
     });
     await db.conversations.update(job.convId, { updatedAt: Date.now() });
+    return true;
   }
 
   // Read the chosen file and hold it until the message is sent.
@@ -207,9 +215,14 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
     return (await db.knowledgePacks.get(selectedPackId)) ?? null;
   }
 
-  async function answerOffline(job: AnswerJob, attachments: Attachment[]): Promise<AnswerResult> {
-    // Saved answers were written without any attached file, so don't reuse them when a file is attached.
-    const match = attachments.length > 0 ? null : await searchLocalHistory(userId, job.question);
+  async function answerOffline(
+    job: AnswerJob,
+    attachments: Attachment[],
+    history: HistoryTurn[]
+  ): Promise<AnswerResult> {
+    // Saved answers were written without any attached file or earlier messages, so don't reuse them then.
+    const match =
+      attachments.length > 0 || history.length > 0 ? null : await searchLocalHistory(userId, job.question);
 
     if (match) {
       return {
@@ -223,18 +236,21 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
         content:
           "No cached answer for this, and your offline AI isn't downloaded yet. Tap “Get Offline AI” at the top when you're back online (about 880 MB, best on Wi-Fi).",
         cache: false,
+        failed: true,
       };
     }
 
     try {
       const pack = await resolvePack(job.question);
-      const attachmentContext = buildAttachmentContext(attachments, job.question, OFFLINE_ATTACHMENT_BUDGET);
+      // A follow-up like "explain more" has few keywords, so the last question also helps pick the right parts of a file.
+      const relevanceQuery = `${job.question} ${lastQuestionIn(history)}`;
+      const attachmentContext = buildAttachmentContext(attachments, relevanceQuery, OFFLINE_ATTACHMENT_BUDGET);
       const augmentedPrompt = buildAugmentedPrompt(job.question, pack, attachmentContext);
 
       localGeneratingRef.current = true;
       let reply: string;
       try {
-        reply = await generateLocalReply(augmentedPrompt);
+        reply = await generateLocalReply(augmentedPrompt, history);
       } finally {
         localGeneratingRef.current = false;
       }
@@ -243,6 +259,7 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
         return {
           content: stopRequestedRef.current ? STOPPED_TEXT : 'Your offline AI hit an error. Try again.',
           cache: false,
+          failed: true,
         };
       }
       const label = pack
@@ -251,18 +268,20 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
       return { content: `${label}\n\n${reply}`, cache: false };
     } catch (err) {
       console.error('Local model generation failed:', err);
-      return { content: 'Your offline AI hit an error. Try again.', cache: false };
+      return { content: 'Your offline AI hit an error. Try again.', cache: false, failed: true };
     }
   }
 
   async function answerOnline(
     job: AnswerJob,
     attachments: Attachment[],
+    history: HistoryTurn[],
     signal: AbortSignal,
     onProgress: (text: string) => void
   ): Promise<AnswerResult> {
     const pack = await resolvePack(job.question);
-    const attachmentContext = buildAttachmentContext(attachments, job.question, ONLINE_ATTACHMENT_BUDGET);
+    const relevanceQuery = `${job.question} ${lastQuestionIn(history)}`;
+    const attachmentContext = buildAttachmentContext(attachments, relevanceQuery, ONLINE_ATTACHMENT_BUDGET);
     const augmentedPrompt = buildAugmentedPrompt(job.question, pack, attachmentContext);
 
     const { data: { session } } = await supabase.auth.getSession();
@@ -274,7 +293,8 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
         Authorization: `Bearer ${session?.access_token}`,
         apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ prompt: augmentedPrompt }),
+      // `history` is the chat so far, so the AI understands follow-up questions.
+      body: JSON.stringify({ prompt: augmentedPrompt, history: history.length > 0 ? history : undefined }),
       signal,
     });
 
@@ -282,7 +302,7 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
       // For these, the server sends a plain-language reason (too fast, daily limit, too large...).
       if (res.status === 413 || res.status === 429 || res.status === 503) {
         const data = await res.json().catch(() => null);
-        if (data && typeof data.error === 'string') return { content: data.error, cache: false };
+        if (data && typeof data.error === 'string') return { content: data.error, cache: false, failed: true };
       }
       throw new Error(`Request failed with status ${res.status}`);
     }
@@ -299,8 +319,9 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
       onProgress(accumulated);
     }
 
-    // Answers based on an attached file only make sense for that chat, so don't save them for reuse.
-    return { content: accumulated, cache: attachments.length === 0 };
+    // Answers that depend on an attached file or on earlier messages only make sense inside that chat,
+    // so they are not saved for reuse.
+    return { content: accumulated, cache: attachments.length === 0 && history.length === 0 };
   }
 
   // Produces and saves one answer. Used for both a normal send and a retry.
@@ -320,30 +341,37 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
 
     try {
       const attachments = await getConversationAttachments(job.convId);
+
+      // The chat so far, as "memory" for the AI. (A question being retried has no answer yet, so it is left out.)
+      const saved = await db.messages.where('conversationId').equals(job.convId).sortBy('timestamp');
+      const onlineHistory = buildHistory(saved, ONLINE_HISTORY);
+      const offlineHistory = buildHistory(saved, OFFLINE_HISTORY);
+
       let result: AnswerResult;
 
       try {
         result = isOnline
-          ? await answerOnline(job, attachments, controller.signal, (text) => {
+          ? await answerOnline(job, attachments, onlineHistory, controller.signal, (text) => {
               partial = text;
               show(text);
             })
-          : await answerOffline(job, attachments);
+          : await answerOffline(job, attachments, offlineHistory);
       } catch (err) {
         if (isAbortError(err)) {
           // Keep what was written so far. If nothing real arrived yet, say it was stopped.
-          result = { content: splitLabels(partial).body ? partial : STOPPED_TEXT, cache: false };
+          const hasText = splitLabels(partial).body !== '';
+          result = { content: hasText ? partial : STOPPED_TEXT, cache: false, failed: !hasText };
         } else if (err instanceof TypeError) {
           // The network failed: fall back to the offline path.
-          result = await answerOffline(job, attachments);
+          result = await answerOffline(job, attachments, offlineHistory);
         } else {
           console.error('Gemini call failed:', err);
-          result = { content: 'Something went wrong reaching SMRT. Please try again.', cache: false };
+          result = { content: 'Something went wrong reaching SMRT. Please try again.', cache: false, failed: true };
         }
       }
 
-      await saveAnswer(job, result.content);
-      if (result.cache) {
+      const savedOk = await saveAnswer(job, result.content, result.failed);
+      if (savedOk && result.cache) {
         await db.qaHistory.add({
           id: crypto.randomUUID(),
           userId,

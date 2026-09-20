@@ -26,10 +26,14 @@ export async function loadLocalModel(
   return loadingPromise;
 }
 
-export async function generateLocalReply(prompt: string): Promise<string> {
+export async function generateLocalReply(
+  prompt: string,
+  history: { role: 'user' | 'assistant'; content: string }[] = []
+): Promise<string> {
   if (!engine) throw new Error('Local model not loaded yet');
   const response = await engine.chat.completions.create({
-    messages: [{ role: 'user', content: prompt }],
+    // Earlier messages first, then the new question.
+    messages: [...history, { role: 'user', content: prompt }],
   });
   return response.choices[0]?.message?.content ?? '';
 }
