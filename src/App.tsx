@@ -142,7 +142,6 @@ function App() {
           isOnline={isOnline}
           pendingCount={pendingCount}
           onOpenMenu={() => setSidebarOpen(true)}
-          email={user?.email ?? null}
           isGuest={isGuest}
           onOpenAccount={() => setShowAccount(true)}
         />
