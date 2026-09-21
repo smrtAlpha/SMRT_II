@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Plus, Search, SquarePen, MessageSquare, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react';
+import { Plus, Search, SquarePen, MessageSquare, MoreHorizontal, Pencil, Trash2, User, X } from 'lucide-react';
 import { db } from '../lib/db';
 import { timeAgo } from '../lib/timeAgo';
 import { renameConversation, deleteConversation, MAX_TITLE_LENGTH } from '../lib/chatActions';
@@ -16,6 +16,10 @@ type Props = {
   onClose: () => void;
   // Opens the "Add a knowledge pack" pop-up (handled by App).
   onAddPack: () => void;
+  // The account button shown at the bottom on phones (on bigger screens it is on the icon strip).
+  email: string | null;
+  isGuest: boolean;
+  onOpenAccount: () => void;
 };
 
 // Where the open "..." menu sits on the screen.
@@ -31,6 +35,9 @@ export default function Sidebar({
   open,
   onClose,
   onAddPack,
+  email,
+  isGuest,
+  onOpenAccount,
 }: Props) {
   const conversations = useLiveQuery(
     () => db.conversations.where('userId').equals(userId).reverse().sortBy('updatedAt'),
@@ -240,6 +247,32 @@ export default function Sidebar({
             />
           </section>
         </div>
+
+        {/* Account: phones only. On bigger screens it lives on the icon strip. */}
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onOpenAccount();
+          }}
+          className="mt-3 flex shrink-0 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left hover:bg-slate-100 md:hidden"
+        >
+          <span
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+              isGuest ? 'bg-slate-200 text-slate-600' : 'bg-blue-600 text-white'
+            }`}
+          >
+            {isGuest ? <User size={16} /> : (email ?? '?').charAt(0).toUpperCase()}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium text-slate-800">
+              {isGuest ? 'Guest' : email}
+            </span>
+            <span className="block text-xs text-slate-500">
+              {isGuest ? 'Create an account or sign in' : 'Your account'}
+            </span>
+          </span>
+        </button>
       </aside>
 
       {menu &&

@@ -7,12 +7,15 @@ import TopBar from './components/TopBar';
 import StatusBar from './components/StatusBar';
 import Modal from './components/Modal';
 import KnowledgePackUpload from './components/KnowledgePackUpload';
+import AccountPanel from './components/AccountPanel';
 import NotificationToggle from './components/NotificationToggle';
 import ResearchQueueForm from './components/ResearchQueueForm';
 import ResearchQueueList from './components/ResearchQueueList';
 import { useAuth } from './lib/useAuth';
 import { useOnlineStatus } from './lib/useOnlineStatus';
 import { refreshPendingResearchTasks } from './lib/refreshPendingTasks';
+import { useAccountMigration } from './lib/useAccountMigration';
+import { takeAuthRedirectError } from './lib/authRedirectError';
 import { useLocalModel } from './lib/useLocalModel';
 import { db } from './lib/db';
 import { WifiOff } from 'lucide-react';
@@ -29,8 +32,36 @@ function App() {
   const [showUpload, setShowUpload] = useState(false);
   // Shows the research queue pop-up (opened from the status bar).
   const [showQueue, setShowQueue] = useState(false);
+  // Shows the account pop-up (create account / sign in / sign out).
+  const [showAccount, setShowAccount] = useState(false);
+  const [accountError, setAccountError] = useState('');
 
   const userId = user?.id ?? '';
+  // A guest is someone who hasn't created an account or signed in yet.
+  const isGuest = user?.is_anonymous !== false;
+
+  // After signing in to an existing account, chats made on this device as a guest are added to it.
+  const { notice, clearNotice } = useAccountMigration(user);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(clearNotice, 8000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notice]);
+
+  // If a Google sign-in just failed, reopen the account pop-up and say why.
+  useEffect(() => {
+    const message = takeAuthRedirectError();
+    if (message) {
+      setAccountError(message);
+      setShowAccount(true);
+    }
+  }, []);
+
+  function closeAccount() {
+    setShowAccount(false);
+    setAccountError('');
+  }
 
   // Waiting research tasks get a fresh login token when the app opens and whenever the connection returns.
   useEffect(() => {
@@ -78,7 +109,7 @@ function App() {
 
   return (
     <div className="flex h-dvh bg-white">
-      <IconRail userId={userId} />
+      <IconRail email={user?.email ?? null} isGuest={isGuest} onOpenAccount={() => setShowAccount(true)} />
       <Sidebar
         userId={userId}
         activeConversationId={activeConversationId}
@@ -86,6 +117,9 @@ function App() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onAddPack={() => setShowUpload(true)}
+        email={user?.email ?? null}
+        isGuest={isGuest}
+        onOpenAccount={() => setShowAccount(true)}
       />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-slate-50/60">
         <TopBar
@@ -95,6 +129,14 @@ function App() {
           onOpenMenu={() => setSidebarOpen(true)}
         />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+          {notice && (
+            <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+              <span>{notice}</span>
+              <button type="button" onClick={clearNotice} aria-label="Dismiss" className="shrink-0 text-green-700 hover:text-green-900">
+                ✕
+              </button>
+            </div>
+          )}
           {!isOnline && (
             <div className="mb-2 flex items-center justify-center gap-2 rounded-lg bg-amber-100 px-3 py-2 text-sm text-amber-800">
               <WifiOff size={14} />
@@ -110,6 +152,17 @@ function App() {
         </div>
         <StatusBar isOnline={isOnline} pendingCount={pendingCount} onOpenQueue={() => setShowQueue(true)} />
       </div>
+
+      {showAccount && (
+        <Modal title="Account" onClose={closeAccount}>
+          <AccountPanel
+            user={user}
+            startError={accountError}
+            onClose={closeAccount}
+            onSignedOut={() => setActiveConversationId(null)}
+          />
+        </Modal>
+      )}
 
       {showQueue && (
         <Modal title="Research queue" onClose={() => setShowQueue(false)}>
