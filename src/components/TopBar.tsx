@@ -1,4 +1,4 @@
-import { Menu, Download, Loader2, RefreshCw, FolderOpen } from 'lucide-react';
+import { Menu, Download, Loader2, RefreshCw, LogIn } from 'lucide-react';
 import InstallButton from './InstallButton';
 import type { useLocalModel } from '../lib/useLocalModel';
 
@@ -9,6 +9,10 @@ type Props = {
   isOnline: boolean;
   pendingCount: number;
   onOpenMenu: () => void;
+  // The account button on the right: "Sign in" for guests, your initial once signed in.
+  email: string | null;
+  isGuest: boolean;
+  onOpenAccount: () => void;
 };
 
 function OfflineAiBadge({ localModel }: { localModel: LocalModel }) {
@@ -48,7 +52,15 @@ function OfflineAiBadge({ localModel }: { localModel: LocalModel }) {
   );
 }
 
-export default function TopBar({ localModel, isOnline, pendingCount, onOpenMenu }: Props) {
+export default function TopBar({
+  localModel,
+  isOnline,
+  pendingCount,
+  onOpenMenu,
+  email,
+  isGuest,
+  onOpenAccount,
+}: Props) {
   // The dot on the Sync button reflects real state.
   const syncDot = !isOnline ? 'bg-slate-400' : pendingCount > 0 ? 'bg-amber-500' : 'bg-green-500';
   const syncLabel = !isOnline ? 'Offline' : pendingCount > 0 ? `${pendingCount} queued` : 'All synced';
@@ -82,15 +94,30 @@ export default function TopBar({ localModel, isOnline, pendingCount, onOpenMenu 
           <span className={`h-2 w-2 rounded-full ${syncDot}`} />
         </button>
 
-        <button
-          type="button"
-          title="Projects — coming soon"
-          aria-label="Projects"
-          className="flex h-9 items-center gap-2 rounded-full bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 sm:px-4"
-        >
-          <FolderOpen size={16} />
-          <span className="hidden sm:inline">Projects</span>
-        </button>
+        {isGuest ? (
+          <button
+            type="button"
+            onClick={onOpenAccount}
+            aria-label="Sign in"
+            className="flex h-9 items-center gap-2 rounded-full bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 sm:px-4"
+          >
+            <LogIn size={16} />
+            <span className="hidden sm:inline">Sign in</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpenAccount}
+            aria-label="Account"
+            title={email ?? 'Your account'}
+            className="flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-white pr-3 pl-1 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50 sm:pr-4"
+          >
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white">
+              {(email ?? '?').charAt(0).toUpperCase()}
+            </span>
+            <span className="hidden max-w-[9rem] truncate sm:inline">{email}</span>
+          </button>
+        )}
       </div>
     </header>
   );

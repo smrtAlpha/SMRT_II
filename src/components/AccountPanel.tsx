@@ -11,6 +11,8 @@ type Props = {
   onClose: () => void;
   // Called after signing out (the app uses it to leave the chat that was open)
   onSignedOut?: () => void;
+  // When given, a "Continue as guest" button is shown (used by the pop-up that appears when the app opens)
+  onContinueAsGuest?: () => void;
 };
 
 function GoogleG() {
@@ -44,7 +46,7 @@ const PRIMARY =
 const INPUT =
   'w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none disabled:opacity-50';
 
-export default function AccountPanel({ user, startError = '', onClose, onSignedOut }: Props) {
+export default function AccountPanel({ user, startError = '', onClose, onSignedOut, onContinueAsGuest }: Props) {
   const [mode, setMode] = useState<Mode>('create');
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [email, setEmail] = useState('');
@@ -155,8 +157,25 @@ export default function AccountPanel({ user, startError = '', onClose, onSignedO
   // ---------- Guest ----------
   return (
     <div>
+      <div role="tablist" className="mb-4 grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-sm font-medium">
+        {(['create', 'signin'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={mode === tab}
+            onClick={() => switchMode(tab)}
+            className={`rounded-md py-1.5 ${
+              mode === tab ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {tab === 'create' ? 'Create account' : 'Sign in'}
+          </button>
+        ))}
+      </div>
+
       <h3 className="mb-1 text-base font-semibold text-slate-900">
-        {mode === 'create' ? 'Create your account' : 'Sign in'}
+        {mode === 'create' ? 'Create your account' : 'Welcome back'}
       </h3>
       <p className="mb-4 text-sm text-slate-600">
         {mode === 'create'
@@ -246,23 +265,15 @@ export default function AccountPanel({ user, startError = '', onClose, onSignedO
 
       {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-      <p className="mt-4 text-center text-sm text-slate-600">
-        {mode === 'create' ? (
-          <>
-            Already have an account?{' '}
-            <button type="button" onClick={() => switchMode('signin')} className="font-medium text-blue-600 hover:underline">
-              Sign in
-            </button>
-          </>
-        ) : (
-          <>
-            New here?{' '}
-            <button type="button" onClick={() => switchMode('create')} className="font-medium text-blue-600 hover:underline">
-              Create an account
-            </button>
-          </>
-        )}
-      </p>
+      {onContinueAsGuest && (
+        <button
+          type="button"
+          onClick={onContinueAsGuest}
+          className="mt-4 w-full text-center text-sm text-slate-500 hover:text-slate-700 hover:underline"
+        >
+          Continue as guest
+        </button>
+      )}
       {user && <p className="mt-3 text-center text-xs text-slate-400">Session ID: {user.id.slice(0, 8)}</p>}
       <p className="mt-1 text-center">
         <PrivacyLink />

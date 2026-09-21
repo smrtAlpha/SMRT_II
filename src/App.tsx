@@ -16,6 +16,7 @@ import { useOnlineStatus } from './lib/useOnlineStatus';
 import { refreshPendingResearchTasks } from './lib/refreshPendingTasks';
 import { useAccountMigration } from './lib/useAccountMigration';
 import { takeAuthRedirectError } from './lib/authRedirectError';
+import { useLaunchPrompt } from './lib/useLaunchPrompt';
 import { useLocalModel } from './lib/useLocalModel';
 import { db } from './lib/db';
 import { WifiOff } from 'lucide-react';
@@ -35,6 +36,8 @@ function App() {
   // Shows the account pop-up (create account / sign in / sign out).
   const [showAccount, setShowAccount] = useState(false);
   const [accountError, setAccountError] = useState('');
+  // True when the account pop-up was opened by the app itself at launch (it then offers "Continue as guest").
+  const [accountAtLaunch, setAccountAtLaunch] = useState(false);
 
   const userId = user?.id ?? '';
   // A guest is someone who hasn't created an account or signed in yet.
@@ -58,9 +61,21 @@ function App() {
     }
   }, []);
 
+  // When the app opens and you are not signed in, offer to sign in or create an account.
+  useLaunchPrompt({
+    loading,
+    isGuest,
+    isOnline,
+    onShow: () => {
+      setAccountAtLaunch(true);
+      setShowAccount(true);
+    },
+  });
+
   function closeAccount() {
     setShowAccount(false);
     setAccountError('');
+    setAccountAtLaunch(false);
   }
 
   // Waiting research tasks get a fresh login token when the app opens and whenever the connection returns.
@@ -127,6 +142,9 @@ function App() {
           isOnline={isOnline}
           pendingCount={pendingCount}
           onOpenMenu={() => setSidebarOpen(true)}
+          email={user?.email ?? null}
+          isGuest={isGuest}
+          onOpenAccount={() => setShowAccount(true)}
         />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
           {notice && (
@@ -154,12 +172,13 @@ function App() {
       </div>
 
       {showAccount && (
-        <Modal title="Account" onClose={closeAccount}>
+        <Modal title={accountAtLaunch ? 'Welcome to SMRT' : 'Account'} onClose={closeAccount}>
           <AccountPanel
             user={user}
             startError={accountError}
             onClose={closeAccount}
             onSignedOut={() => setActiveConversationId(null)}
+            onContinueAsGuest={accountAtLaunch ? closeAccount : undefined}
           />
         </Modal>
       )}
