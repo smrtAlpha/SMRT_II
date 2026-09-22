@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Plus, Search, SquarePen, MessageSquare, MoreHorizontal, Pencil, Trash2, User, X } from 'lucide-react';
+import { Plus, Search, SquarePen, MessageSquare, MoreHorizontal, Pencil, Trash2, User, X, Download, Loader2 } from 'lucide-react';
 import { db } from '../lib/db';
 import { timeAgo } from '../lib/timeAgo';
 import { renameConversation, deleteConversation, MAX_TITLE_LENGTH } from '../lib/chatActions';
+import { syncChatOffline } from '../lib/chatSync';
 import KnowledgePackList from './KnowledgePackList';
 
 type Props = {
@@ -26,7 +27,7 @@ type Props = {
 type MenuPosition = { id: string; top: number; left: number };
 
 const MENU_WIDTH = 144;
-const MENU_HEIGHT = 88;
+const MENU_HEIGHT = 124;
 
 export default function Sidebar({
   userId,
@@ -49,6 +50,8 @@ export default function Sidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const skipBlurSave = useRef(false);
+  // Which chat is currently being turned into an offline Knowledge Pack.
+  const [syncingId, setSyncingId] = useState<string | null>(null);
 
   // While a menu is open: close it when you tap somewhere else, press Escape, scroll, or resize.
   useEffect(() => {
@@ -109,6 +112,16 @@ export default function Sidebar({
     if (!window.confirm(`Delete "${name}"? This removes its messages and attached files.`)) return;
     await deleteConversation(userId, id);
     if (id === activeConversationId) onSelectConversation(null);
+  }
+
+  async function handleSync(id: string) {
+    setMenu(null);
+    setSyncingId(id);
+    const result = await syncChatOffline(userId, id);
+    setSyncingId(null);
+    if (!result.ok) {
+      window.alert(result.message);
+    }
   }
 
   const menuChat = menu ? conversations?.find((c) => c.id === menu.id) : undefined;
@@ -217,17 +230,24 @@ export default function Sidebar({
                             <span className="block truncate text-sm font-medium text-slate-800">
                               {c.title || 'Untitled chat'}
                             </span>
-                            <span className="block text-xs text-slate-400">{timeAgo(c.updatedAt)}</span>
+                            <span className="block text-xs text-slate-400">
+                              {syncingId === c.id ? 'Syncing for offline…' : timeAgo(c.updatedAt)}
+                            </span>
                           </span>
                         </button>
                         <button
                           type="button"
                           onClick={(e) => toggleMenu(c.id, e.currentTarget)}
+                          disabled={syncingId === c.id}
                           aria-label="Chat options"
                           aria-expanded={menu?.id === c.id}
-                          className="absolute top-1/2 right-2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:bg-slate-200"
+                          className="absolute top-1/2 right-2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 disabled:opacity-60"
                         >
-                          <MoreHorizontal size={16} />
+                          {syncingId === c.id ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <MoreHorizontal size={16} />
+                          )}
                         </button>
                       </>
                     )}
@@ -289,6 +309,13 @@ export default function Sidebar({
               className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
             >
               <Pencil size={14} /> Rename
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSync(menuChat.id)}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+            >
+              <Download size={14} /> Sync for offline
             </button>
             <button
               type="button"

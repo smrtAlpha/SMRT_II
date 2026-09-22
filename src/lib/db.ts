@@ -15,6 +15,8 @@ export interface KnowledgePack {
   sourceFileName: string;
   summary: string;
   timestamp: number;
+  // Set when this pack was made by syncing a chat, rather than uploading a file.
+  sourceConversationId?: string;
 }
 
 export interface ResearchTask {
@@ -44,13 +46,10 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
-  // Names of files attached to this message (user messages only)
   attachmentNames?: string[];
-  // True when this "answer" is really an error or a stopped answer, so it isn't used as chat memory
   failed?: boolean;
 }
 
-// A file the user attached to one specific chat. `text` is the extracted text of the file.
 export interface Attachment {
   id: string;
   conversationId: string;
@@ -90,6 +89,15 @@ class SmrtDatabase extends Dexie {
       messages: 'id, conversationId, timestamp',
     });
     this.version(5).stores({
+      qaHistory: 'id, userId, timestamp',
+      knowledgePacks: 'id, userId, subject, timestamp',
+      researchQueue: 'id, userId, status, createdAt',
+      conversations: 'id, userId, updatedAt',
+      messages: 'id, conversationId, timestamp',
+      attachments: 'id, conversationId, userId, timestamp',
+    });
+    // v6: no new index needed — sourceConversationId is just an optional field read/written as-is.
+    this.version(6).stores({
       qaHistory: 'id, userId, timestamp',
       knowledgePacks: 'id, userId, subject, timestamp',
       researchQueue: 'id, userId, status, createdAt',
