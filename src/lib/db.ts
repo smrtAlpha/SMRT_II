@@ -109,3 +109,32 @@ class SmrtDatabase extends Dexie {
 }
 
 export const db = new SmrtDatabase();
+
+// Wipes every local table. Used on sign-out so nothing from the session that just ended
+// (chats, knowledge packs, attachments, etc.) is still sitting in IndexedDB afterwards —
+// important on a shared device, since the next guest session should start from nothing.
+export async function wipeLocalData(): Promise<void> {
+  await db.transaction('rw', db.tables, () => Promise.all(db.tables.map((t) => t.clear())));
+}
+
+// Deletes just one user's rows, leaving everyone else's local data alone. Used when someone
+// declines to add their guest chats to the account they just signed into — those guest rows
+// get burned instead of sitting around unreachable.
+export async function wipeUserData(userId: string): Promise<void> {
+  await db.transaction(
+    'rw',
+    [db.qaHistory, db.knowledgePacks, db.researchQueue, db.conversations, db.messages, db.attachments],
+    async () => {
+      await db.conversations.where('userId').equals(userId).delete();
+      await db.qaHistory.where('userId').equals(userId).delete();
+      await db.knowledgePacks.where('userId').equals(userId).delete();
+      await db.researchQueue.where('userId').equals(userId).delete();
+      await db.attachments.where('userId').equals(userId).delete();
+      // Messages don't have an index on userId, so look through them all.
+      await db.messages
+        .toCollection()
+        .filter((m) => m.userId === userId)
+        .delete();
+    }
+  );
+}

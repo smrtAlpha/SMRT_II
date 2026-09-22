@@ -7,8 +7,9 @@ export type Mode = 'create' | 'signin';
 export type Result = { ok: true } | { ok: false; message: string };
 
 // ---- Remembering the guest ID while signing in to an existing account ----
-// Signing in to an existing account swaps your guest ID for the account's ID. This note lets the app move
-// the chats made on this device over to the account afterwards.
+// Signing in to an existing account swaps your guest ID for the account's ID. This note lets the
+// app check afterwards whether there were guest chats on this device, so it can ask whether to
+// add them to the account (or burn them if you say no).
 const MIGRATE_KEY = 'smrt-migrate-from';
 
 export function rememberGuestForMigration(userId: string) {

@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { readMigrationMarker, clearMigrationMarker } from './account';
 import { migrateLocalData } from './accountMigration';
+import { db, wipeUserData } from './db';
 
-// After signing in to an existing account, moves the chats made on this device as a guest over to it.
+// After signing in to an existing account, checks whether there are chats from a guest session
+// on this device. If there are, asks whether to add them to the account — yes merges them in,
+// no burns them from this device so they aren't left behind, unreachable, forever.
 export function useAccountMigration(user: User | null) {
   const [notice, setNotice] = useState('');
 
@@ -20,16 +23,26 @@ export function useAccountMigration(user: User | null) {
       return;
     }
 
-    migrateLocalData(guestId, userId)
-      .then((chats) => {
-        clearMigrationMarker();
-        if (chats > 0) {
-          setNotice(
-            `Signed in. ${chats} chat${chats === 1 ? '' : 's'} from this device ${chats === 1 ? 'was' : 'were'} added to your account.`
-          );
-        }
-      })
-      .catch((err) => console.error('Moving guest chats failed:', err));
+    (async () => {
+      const chatCount = await db.conversations.where('userId').equals(guestId).count();
+      clearMigrationMarker();
+      if (chatCount === 0) return; // nothing from the guest session to ask about
+
+      const wantsMerge = window.confirm(
+        `You have ${chatCount} chat${chatCount === 1 ? '' : 's'} from this device's guest session. ` +
+          `Add ${chatCount === 1 ? 'it' : 'them'} to your account?\n\n` +
+          `Choosing Cancel deletes ${chatCount === 1 ? 'it' : 'them'} from this device instead.`
+      );
+
+      if (wantsMerge) {
+        const moved = await migrateLocalData(guestId, userId);
+        setNotice(
+          `Signed in. ${moved} chat${moved === 1 ? '' : 's'} from this device ${moved === 1 ? 'was' : 'were'} added to your account.`
+        );
+      } else {
+        await wipeUserData(guestId);
+      }
+    })().catch((err) => console.error('Handling guest chats failed:', err));
   }, [userId, isRealAccount]);
 
   return { notice, clearNotice: () => setNotice('') };
