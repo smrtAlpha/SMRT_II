@@ -15,6 +15,7 @@ import { useAuth } from './lib/useAuth';
 import { useOnlineStatus } from './lib/useOnlineStatus';
 import { refreshPendingResearchTasks } from './lib/refreshPendingTasks';
 import { useAccountMigration } from './lib/useAccountMigration';
+import { useCloudSync } from './lib/useCloudSync';
 import { takeAuthRedirectError } from './lib/authRedirectError';
 import { useLaunchPrompt } from './lib/useLaunchPrompt';
 import { useLocalModel } from './lib/useLocalModel';
@@ -26,6 +27,7 @@ function App() {
   const { user, loading } = useAuth();
   const isOnline = useOnlineStatus();
   const localModel = useLocalModel();
+  const cloudSync = useCloudSync(user, isOnline);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   // Only matters on mobile, where the sidebar slides in as a drawer.
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -43,7 +45,7 @@ function App() {
   // A guest is someone who hasn't created an account or signed in yet.
   const isGuest = user?.is_anonymous !== false;
 
-  // After signing in to an existing account, chats made on this device as a guest are added to it.
+  // After signing in to an existing account, asks whether to add this device's guest chats to it.
   const { notice, clearNotice } = useAccountMigration(user);
   useEffect(() => {
     if (!notice) return;
@@ -102,7 +104,7 @@ function App() {
     return () => navigator.serviceWorker?.removeEventListener('message', handleMessage);
   }, []);
 
-  // How many research tasks are still waiting to sync (drives the Sync dot).
+  // How many research tasks are still waiting to sync (drives the status bar, not the Sync button).
   const pendingCount =
     useLiveQuery(
       () =>
@@ -140,7 +142,7 @@ function App() {
         <TopBar
           localModel={localModel}
           isOnline={isOnline}
-          pendingCount={pendingCount}
+          cloudSync={cloudSync}
           onOpenMenu={() => setSidebarOpen(true)}
           isGuest={isGuest}
           onOpenAccount={() => setShowAccount(true)}

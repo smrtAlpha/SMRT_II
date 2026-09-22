@@ -1,13 +1,15 @@
-import { Menu, Download, Loader2, RefreshCw, LogIn, FolderOpen } from 'lucide-react';
+import { Menu, Download, Loader2, RefreshCw, LogIn, FolderOpen, TriangleAlert } from 'lucide-react';
 import InstallButton from './InstallButton';
 import type { useLocalModel } from '../lib/useLocalModel';
+import type { useCloudSync } from '../lib/useCloudSync';
 
 type LocalModel = ReturnType<typeof useLocalModel>;
+type CloudSync = ReturnType<typeof useCloudSync>;
 
 type Props = {
   localModel: LocalModel;
   isOnline: boolean;
-  pendingCount: number;
+  cloudSync: CloudSync;
   onOpenMenu: () => void;
   // The button on the right: "Sign in" for guests, "Projects" once signed in.
   isGuest: boolean;
@@ -51,17 +53,30 @@ function OfflineAiBadge({ localModel }: { localModel: LocalModel }) {
   );
 }
 
-export default function TopBar({
-  localModel,
-  isOnline,
-  pendingCount,
-  onOpenMenu,
-  isGuest,
-  onOpenAccount,
-}: Props) {
-  // The dot on the Sync button reflects real state.
-  const syncDot = !isOnline ? 'bg-slate-400' : pendingCount > 0 ? 'bg-amber-500' : 'bg-green-500';
-  const syncLabel = !isOnline ? 'Offline' : pendingCount > 0 ? `${pendingCount} queued` : 'All synced';
+export default function TopBar({ localModel, isOnline, cloudSync, onOpenMenu, isGuest, onOpenAccount }: Props) {
+  const syncDisabled = isGuest || !isOnline || cloudSync.syncing;
+
+  const syncDot = isGuest
+    ? 'bg-slate-300'
+    : !isOnline
+      ? 'bg-slate-400'
+      : cloudSync.syncing
+        ? 'bg-blue-500'
+        : cloudSync.lastError
+          ? 'bg-red-500'
+          : 'bg-green-500';
+
+  const syncLabel = isGuest
+    ? 'Sign in to sync across devices'
+    : !isOnline
+      ? 'Offline'
+      : cloudSync.syncing
+        ? 'Syncing…'
+        : cloudSync.lastError
+          ? `Sync failed: ${cloudSync.lastError} — tap to retry`
+          : cloudSync.lastSyncedAt
+            ? 'All synced'
+            : 'Not synced yet — tap to sync';
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 md:h-16 md:px-6">
@@ -83,11 +98,19 @@ export default function TopBar({
 
         <button
           type="button"
-          title={`${syncLabel} — sync button coming soon`}
+          onClick={cloudSync.sync}
+          disabled={syncDisabled}
+          title={syncLabel}
           aria-label="Sync"
-          className="flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50 sm:px-4"
+          className="flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50 disabled:opacity-60 sm:px-4"
         >
-          <RefreshCw size={16} className="text-blue-600" />
+          {cloudSync.syncing ? (
+            <RefreshCw size={16} className="animate-spin text-blue-600" />
+          ) : cloudSync.lastError ? (
+            <TriangleAlert size={16} className="text-red-500" />
+          ) : (
+            <RefreshCw size={16} className="text-blue-600" />
+          )}
           <span className="hidden sm:inline">Sync</span>
           <span className={`h-2 w-2 rounded-full ${syncDot}`} />
         </button>
