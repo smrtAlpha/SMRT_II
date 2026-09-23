@@ -139,8 +139,8 @@ export default function AccountPanel({ user, startError = '', onClose, onSignedO
           </div>
         </div>
         <p className="mb-4 text-sm text-slate-600">
-          Your account and its higher limits work on any device. Your chats, files and knowledge packs are saved on
-          this device only for now, so on a new device you'll start with an empty list.
+          Your account and its higher limits work on any device. Your chats and knowledge packs sync automatically
+          to any device you sign into with this account.
         </p>
         <button type="button" onClick={handleSignOut} className={BUTTON}>
           <LogOut size={16} />
@@ -180,7 +180,7 @@ export default function AccountPanel({ user, startError = '', onClose, onSignedO
       <p className="mb-4 text-sm text-slate-600">
         {mode === 'create'
           ? "You're using SMRT as a guest. Create an account so you don't lose it if you clear your browser data, and get higher limits. Your chats stay exactly as they are."
-          : 'Sign in to an account you already have. Chats made on this device as a guest will be added to it.'}
+          : "Sign in to an account you already have. If this device has chats from using it as a guest, you'll be asked whether to add them to the account or leave them behind."}
       </p>
 
       <button type="button" onClick={handleGoogle} disabled={busy} className={BUTTON}>

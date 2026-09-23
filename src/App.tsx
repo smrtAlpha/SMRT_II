@@ -2,12 +2,16 @@ import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import ChatWindow from './components/ChatWindow';
 import IconRail from './components/IconRail';
+import type { View } from './components/IconRail';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import StatusBar from './components/StatusBar';
 import Modal from './components/Modal';
 import KnowledgePackUpload from './components/KnowledgePackUpload';
 import AccountPanel from './components/AccountPanel';
+import SettingsView from './components/SettingsView';
+import FilesView from './components/FilesView';
+import DataView from './components/DataView';
 import NotificationToggle from './components/NotificationToggle';
 import ResearchQueueForm from './components/ResearchQueueForm';
 import ResearchQueueList from './components/ResearchQueueList';
@@ -23,11 +27,28 @@ import { db } from './lib/db';
 import { WifiOff } from 'lucide-react';
 import './App.css';
 
+// Not built yet — Friends and Write each get their own step.
+const COMING_SOON: Partial<Record<View, string>> = {
+  notes: 'Connecting with friends — a chat with schoolmates, tutors and lecturers',
+  write: 'A writing space, separate from chat',
+};
+
+function ComingSoonView({ view }: { view: View }) {
+  const label = view === 'notes' ? 'Friends' : view;
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center text-slate-400">
+      <p className="font-medium capitalize text-slate-500">{label}</p>
+      <p className="text-sm">{COMING_SOON[view]} — coming soon.</p>
+    </div>
+  );
+}
+
 function App() {
   const { user, loading } = useAuth();
   const isOnline = useOnlineStatus();
   const localModel = useLocalModel();
   const cloudSync = useCloudSync(user, isOnline);
+  const [view, setView] = useState<View>('chat');
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   // Only matters on mobile, where the sidebar slides in as a drawer.
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -125,19 +146,21 @@ function App() {
   }
 
   return (
-    <div className="flex h-dvh bg-white">
-      <IconRail email={user?.email ?? null} isGuest={isGuest} onOpenAccount={() => setShowAccount(true)} />
-      <Sidebar
-        userId={userId}
-        activeConversationId={activeConversationId}
-        onSelectConversation={setActiveConversationId}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onAddPack={() => setShowUpload(true)}
-        email={user?.email ?? null}
-        isGuest={isGuest}
-        onOpenAccount={() => setShowAccount(true)}
-      />
+    <div className="flex h-dvh flex-col bg-white md:flex-row">
+      <IconRail view={view} onSelectView={setView} email={user?.email ?? null} isGuest={isGuest} onOpenAccount={() => setShowAccount(true)} />
+      {view === 'chat' && (
+        <Sidebar
+          userId={userId}
+          activeConversationId={activeConversationId}
+          onSelectConversation={setActiveConversationId}
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onAddPack={() => setShowUpload(true)}
+          email={user?.email ?? null}
+          isGuest={isGuest}
+          onOpenAccount={() => setShowAccount(true)}
+        />
+      )}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-slate-50/60">
         <TopBar
           localModel={localModel}
@@ -162,12 +185,29 @@ function App() {
               You're offline — using cached history
             </div>
           )}
-          <ChatWindow
-            userId={userId}
-            conversationId={activeConversationId}
-            onNewConversation={setActiveConversationId}
-            localModel={localModel}
-          />
+
+          {view === 'chat' && (
+            <ChatWindow
+              userId={userId}
+              conversationId={activeConversationId}
+              onNewConversation={setActiveConversationId}
+              localModel={localModel}
+            />
+          )}
+          {view === 'settings' && (
+            <SettingsView user={user} localModel={localModel} onSignedOut={() => setActiveConversationId(null)} />
+          )}
+          {view === 'files' && (
+            <FilesView
+              userId={userId}
+              onOpenConversation={(id) => {
+                setActiveConversationId(id);
+                setView('chat');
+              }}
+            />
+          )}
+          {view === 'data' && <DataView userId={userId} />}
+          {(view === 'notes' || view === 'write') && <ComingSoonView view={view} />}
         </div>
         <StatusBar isOnline={isOnline} pendingCount={pendingCount} onOpenQueue={() => setShowQueue(true)} />
       </div>
