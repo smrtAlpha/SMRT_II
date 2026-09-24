@@ -59,6 +59,15 @@ export interface Attachment {
   timestamp: number;
 }
 
+export interface Document {
+  id: string;
+  userId: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 class SmrtDatabase extends Dexie {
   qaHistory!: Table<QARecord, string>;
   knowledgePacks!: Table<KnowledgePack, string>;
@@ -66,6 +75,7 @@ class SmrtDatabase extends Dexie {
   conversations!: Table<Conversation, string>;
   messages!: Table<Message, string>;
   attachments!: Table<Attachment, string>;
+  documents!: Table<Document, string>;
 
   constructor() {
     super('smrt-db');
@@ -105,6 +115,16 @@ class SmrtDatabase extends Dexie {
       messages: 'id, conversationId, timestamp',
       attachments: 'id, conversationId, userId, timestamp',
     });
+    // v7: adds documents, for the Write feature (separate from chats).
+    this.version(7).stores({
+      qaHistory: 'id, userId, timestamp',
+      knowledgePacks: 'id, userId, subject, timestamp',
+      researchQueue: 'id, userId, status, createdAt',
+      conversations: 'id, userId, updatedAt',
+      messages: 'id, conversationId, timestamp',
+      attachments: 'id, conversationId, userId, timestamp',
+      documents: 'id, userId, updatedAt',
+    });
   }
 }
 
@@ -123,13 +143,14 @@ export async function wipeLocalData(): Promise<void> {
 export async function wipeUserData(userId: string): Promise<void> {
   await db.transaction(
     'rw',
-    [db.qaHistory, db.knowledgePacks, db.researchQueue, db.conversations, db.messages, db.attachments],
+    [db.qaHistory, db.knowledgePacks, db.researchQueue, db.conversations, db.messages, db.attachments, db.documents],
     async () => {
       await db.conversations.where('userId').equals(userId).delete();
       await db.qaHistory.where('userId').equals(userId).delete();
       await db.knowledgePacks.where('userId').equals(userId).delete();
       await db.researchQueue.where('userId').equals(userId).delete();
       await db.attachments.where('userId').equals(userId).delete();
+      await db.documents.where('userId').equals(userId).delete();
       // Messages don't have an index on userId, so look through them all.
       await db.messages
         .toCollection()

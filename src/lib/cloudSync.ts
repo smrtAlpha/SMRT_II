@@ -220,3 +220,25 @@ export async function syncNow(userId: string): Promise<SyncResult> {
     return { ok: false, message: err instanceof Error ? err.message : 'Sync failed.' };
   }
 }
+
+// Best-effort: deletes one message from the cloud. Used right when a message is deleted locally
+// (e.g. Retry replacing an old answer), so the old row doesn't get pulled back down on the next
+// sync — messages are otherwise synced append-only and don't know about local deletes.
+// Safe to call for guests too: there's nothing to delete in the cloud for them, so it's a no-op.
+export async function deleteMessageFromCloud(id: string): Promise<void> {
+  try {
+    await supabase.from('messages').delete().eq('id', id);
+  } catch (err) {
+    console.error('Deleting message from the cloud failed (will not block the retry):', err);
+  }
+}
+
+// Best-effort: deletes a conversation from the cloud. Messages and attachments for it are removed
+// automatically (the schema cascades), so this alone cleans up its whole cloud footprint.
+export async function deleteConversationFromCloud(id: string): Promise<void> {
+  try {
+    await supabase.from('conversations').delete().eq('id', id);
+  } catch (err) {
+    console.error('Deleting conversation from the cloud failed (will not block the local delete):', err);
+  }
+}

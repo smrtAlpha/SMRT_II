@@ -18,6 +18,7 @@ import { extractTextFromFile } from '../lib/extractText';
 import { splitLabels } from '../lib/messageLabels';
 import { buildHistory, lastQuestionIn, ONLINE_HISTORY, OFFLINE_HISTORY } from '../lib/chatHistory';
 import type { HistoryTurn } from '../lib/chatHistory';
+import { deleteMessageFromCloud } from '../lib/cloudSync';
 import {
   MAX_FILE_BYTES,
   ONLINE_ATTACHMENT_BUDGET,
@@ -440,6 +441,9 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
 
     try {
       await db.messages.delete(assistantMessageId);
+      // Also remove it from the cloud, or it would just get pulled back down on the next sync
+      // (this is what was causing the old and new answers to both show up after Retry).
+      await deleteMessageFromCloud(assistantMessageId);
       // Forget the old saved answer to this question, so offline mode can't hand the same one back.
       await db.qaHistory
         .where('userId')

@@ -1,4 +1,5 @@
 import { db } from './db';
+import { deleteConversationFromCloud } from './cloudSync';
 
 export const MAX_TITLE_LENGTH = 80;
 
@@ -29,4 +30,8 @@ export async function deleteConversation(userId: string, id: string) {
     }
     await db.conversations.delete(id);
   });
+
+  // Best-effort — if this device is offline, the cloud copy just won't be cleaned up until
+  // it's deleted from wherever it's reachable next. It won't undo the local delete either way.
+  deleteConversationFromCloud(id);
 }
