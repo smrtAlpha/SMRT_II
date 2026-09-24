@@ -12,6 +12,7 @@ import AccountPanel from './components/AccountPanel';
 import SettingsView from './components/SettingsView';
 import FilesView from './components/FilesView';
 import DataView from './components/DataView';
+import WriteView from './components/WriteView';
 import NotificationToggle from './components/NotificationToggle';
 import ResearchQueueForm from './components/ResearchQueueForm';
 import ResearchQueueList from './components/ResearchQueueList';
@@ -27,10 +28,9 @@ import { db } from './lib/db';
 import { WifiOff } from 'lucide-react';
 import './App.css';
 
-// Not built yet — Friends and Write each get their own step.
+// Not built yet — Friends needs sync + profiles + live messaging + blocking/reporting first.
 const COMING_SOON: Partial<Record<View, string>> = {
   notes: 'Connecting with friends — a chat with schoolmates, tutors and lecturers',
-  write: 'A writing space, separate from chat',
 };
 
 function ComingSoonView({ view }: { view: View }) {
@@ -207,7 +207,8 @@ function App() {
             />
           )}
           {view === 'data' && <DataView userId={userId} />}
-          {(view === 'notes' || view === 'write') && <ComingSoonView view={view} />}
+          {view === 'write' && <WriteView userId={userId} />}
+          {view === 'notes' && <ComingSoonView view={view} />}
         </div>
         <StatusBar isOnline={isOnline} pendingCount={pendingCount} onOpenQueue={() => setShowQueue(true)} />
       </div>

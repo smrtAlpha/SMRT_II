@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { db, type Document } from '../lib/db';
+import { deleteDocumentFromCloud } from '../lib/cloudSync';
 import { timeAgo } from '../lib/timeAgo';
 
 type Props = { userId: string };
@@ -44,6 +45,7 @@ export default function WriteView({ userId }: Props) {
   async function deleteDocument(id: string) {
     if (!window.confirm('Delete this document?')) return;
     await db.documents.delete(id);
+    await deleteDocumentFromCloud(id);
     if (id === selectedId) setSelectedId(null);
   }
 

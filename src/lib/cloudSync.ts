@@ -31,6 +31,7 @@ type CloudKnowledgePack = {
   timestamp: number;
   source_conversation_id: string | null;
 };
+type CloudDocument = { id: string; user_id: string; title: string; content: string; created_at: number; updated_at: number };
 
 // Pulls whatever is newer from the cloud into Dexie, then pushes whatever is newer locally
 // up to the cloud (last write wins, compared by updatedAt/timestamp). Messages and attachments
@@ -214,6 +215,54 @@ export async function syncNow(userId: string): Promise<SyncResult> {
       pulled += fullRows?.length ?? 0;
     }
 
+    // ---- Documents (Write) ----
+    const [localDocs, { data: cloudDocsRaw, error: docErr }] = await Promise.all([
+      db.documents.where('userId').equals(userId).toArray(),
+      supabase.from('documents').select('*').eq('user_id', userId),
+    ]);
+    if (docErr) throw docErr;
+    const cloudDocs = (cloudDocsRaw ?? []) as CloudDocument[];
+
+    const localDocById = new Map(localDocs.map((d) => [d.id, d]));
+    const cloudDocById = new Map(cloudDocs.map((d) => [d.id, d]));
+
+    const docsToPull = cloudDocs.filter((d) => {
+      const local = localDocById.get(d.id);
+      return !local || d.updated_at > local.updatedAt;
+    });
+    if (docsToPull.length > 0) {
+      await db.documents.bulkPut(
+        docsToPull.map((d) => ({
+          id: d.id,
+          userId: d.user_id,
+          title: d.title,
+          content: d.content,
+          createdAt: d.created_at,
+          updatedAt: d.updated_at,
+        }))
+      );
+      pulled += docsToPull.length;
+    }
+
+    const docsToPush = localDocs.filter((d) => {
+      const cloud = cloudDocById.get(d.id);
+      return !cloud || d.updatedAt > cloud.updated_at;
+    });
+    if (docsToPush.length > 0) {
+      const { error } = await supabase.from('documents').upsert(
+        docsToPush.map((d) => ({
+          id: d.id,
+          user_id: d.userId,
+          title: d.title,
+          content: d.content,
+          created_at: d.createdAt,
+          updated_at: d.updatedAt,
+        }))
+      );
+      if (error) throw error;
+      pushed += docsToPush.length;
+    }
+
     return { ok: true, pulled, pushed };
   } catch (err) {
     console.error('Cloud sync failed:', err);
@@ -240,5 +289,15 @@ export async function deleteConversationFromCloud(id: string): Promise<void> {
     await supabase.from('conversations').delete().eq('id', id);
   } catch (err) {
     console.error('Deleting conversation from the cloud failed (will not block the local delete):', err);
+  }
+}
+
+// Best-effort: deletes a Write document from the cloud, same reasoning as the two helpers above —
+// documents sync last-write-wins by updatedAt, which has no idea a local delete happened.
+export async function deleteDocumentFromCloud(id: string): Promise<void> {
+  try {
+    await supabase.from('documents').delete().eq('id', id);
+  } catch (err) {
+    console.error('Deleting document from the cloud failed (will not block the local delete):', err);
   }
 }
