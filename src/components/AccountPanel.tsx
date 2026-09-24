@@ -47,7 +47,7 @@ const INPUT =
   'w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none disabled:opacity-50';
 
 export default function AccountPanel({ user, startError = '', onClose, onSignedOut, onContinueAsGuest }: Props) {
-  const [mode, setMode] = useState<Mode>('create');
+  const [mode, setMode] = useState<Mode>('signin');
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');

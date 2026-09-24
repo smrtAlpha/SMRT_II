@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Brain } from 'lucide-react';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import type { ChatMessage } from '../types';
@@ -19,6 +19,7 @@ import { splitLabels } from '../lib/messageLabels';
 import { buildHistory, lastQuestionIn, ONLINE_HISTORY, OFFLINE_HISTORY } from '../lib/chatHistory';
 import type { HistoryTurn } from '../lib/chatHistory';
 import { deleteMessageFromCloud } from '../lib/cloudSync';
+import { saveMemoryFact, buildMemoryContext } from '../lib/memory';
 import {
   MAX_FILE_BYTES,
   ONLINE_ATTACHMENT_BUDGET,
@@ -62,20 +63,37 @@ function isAbortError(err: unknown) {
   return err instanceof DOMException && err.name === 'AbortError';
 }
 
-function buildAugmentedPrompt(query: string, pack: KnowledgePack | null, attachmentContext: string): string {
-  if (!pack && !attachmentContext) return query;
+function buildAugmentedPrompt(
+  query: string,
+  pack: KnowledgePack | null,
+  attachmentContext: string,
+  memoryContext: string
+): string {
+  const parts: string[] = [];
 
-  const intro = attachmentContext
-    ? `The user attached file(s) to this chat, shown below. Decide whether the question can be answered from them.
+  // What's known about the user from other chats — applies regardless of which knowledge pack
+  // or attachment (if any) is also in play, so it's handled separately from those below.
+  if (memoryContext) {
+    parts.push(
+      `What you know about the user from earlier conversations (bring these up only if relevant to the question):\n${memoryContext}`
+    );
+  }
+
+  if (pack || attachmentContext) {
+    const intro = attachmentContext
+      ? `The user attached file(s) to this chat, shown below. Decide whether the question can be answered from them.
 Begin your reply with exactly one of these two tags, alone on the first line, before anything else:
 [[FROM_FILE]] - if the attached file(s) contain the answer. Then answer using them.
 [[OUTSIDE]] - if they do NOT contain the answer (for example, the question is unrelated to the file). Then answer from your own general knowledge.
 Never mention the tag in your answer. Put a blank line after the tag, then your answer.`
-    : "Use the following reference material if it's relevant to the question. If it isn't relevant, just answer normally from your own knowledge.";
+      : "Use the following reference material if it's relevant to the question. If it isn't relevant, just answer normally from your own knowledge.";
+    parts.push(intro);
+    if (attachmentContext) parts.push(attachmentContext);
+    if (pack) parts.push(`REFERENCE MATERIAL (${pack.subject}, from "${pack.sourceFileName}"):\n${pack.summary}`);
+  }
 
-  const parts = [intro];
-  if (attachmentContext) parts.push(attachmentContext);
-  if (pack) parts.push(`REFERENCE MATERIAL (${pack.subject}, from "${pack.sourceFileName}"):\n${pack.summary}`);
+  if (parts.length === 0) return query;
+
   parts.push(`QUESTION: ${query}`);
   return parts.join('\n\n');
 }
@@ -98,6 +116,10 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
 
   const [showReadyBanner, setShowReadyBanner] = useState(false);
   const wasReady = useRef(false);
+
+  // Briefly shown right after a message is sent, if something worth remembering was found in it.
+  const [memoryBanner, setMemoryBanner] = useState<string | null>(null);
+  const memoryBannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (localModel.isReady && !wasReady.current) {
@@ -127,6 +149,8 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
     setTransientMessages([]);
     setPendingFiles([]);
     setAttachError('');
+    if (memoryBannerTimer.current) clearTimeout(memoryBannerTimer.current);
+    setMemoryBanner(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
@@ -219,7 +243,8 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
   async function answerOffline(
     job: AnswerJob,
     attachments: Attachment[],
-    history: HistoryTurn[]
+    history: HistoryTurn[],
+    memoryContext: string
   ): Promise<AnswerResult> {
     // Saved answers were written without any attached file or earlier messages, so don't reuse them then.
     const match =
@@ -246,7 +271,7 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
       // A follow-up like "explain more" has few keywords, so the last question also helps pick the right parts of a file.
       const relevanceQuery = `${job.question} ${lastQuestionIn(history)}`;
       const attachmentContext = buildAttachmentContext(attachments, relevanceQuery, OFFLINE_ATTACHMENT_BUDGET);
-      const augmentedPrompt = buildAugmentedPrompt(job.question, pack, attachmentContext);
+      const augmentedPrompt = buildAugmentedPrompt(job.question, pack, attachmentContext, memoryContext);
 
       localGeneratingRef.current = true;
       let reply: string;
@@ -277,13 +302,14 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
     job: AnswerJob,
     attachments: Attachment[],
     history: HistoryTurn[],
+    memoryContext: string,
     signal: AbortSignal,
     onProgress: (text: string) => void
   ): Promise<AnswerResult> {
     const pack = await resolvePack(job.question);
     const relevanceQuery = `${job.question} ${lastQuestionIn(history)}`;
     const attachmentContext = buildAttachmentContext(attachments, relevanceQuery, ONLINE_ATTACHMENT_BUDGET);
-    const augmentedPrompt = buildAugmentedPrompt(job.question, pack, attachmentContext);
+    const augmentedPrompt = buildAugmentedPrompt(job.question, pack, attachmentContext, memoryContext);
 
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -347,16 +373,18 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
       const saved = await db.messages.where('conversationId').equals(job.convId).sortBy('timestamp');
       const onlineHistory = buildHistory(saved, ONLINE_HISTORY);
       const offlineHistory = buildHistory(saved, OFFLINE_HISTORY);
+      // Facts about the user from ANY chat, not just this one (e.g. their name), so they carry over.
+      const memoryContext = await buildMemoryContext(userId);
 
       let result: AnswerResult;
 
       try {
         result = isOnline
-          ? await answerOnline(job, attachments, onlineHistory, controller.signal, (text) => {
+          ? await answerOnline(job, attachments, onlineHistory, memoryContext, controller.signal, (text) => {
               partial = text;
               show(text);
             })
-          : await answerOffline(job, attachments, offlineHistory);
+          : await answerOffline(job, attachments, offlineHistory, memoryContext);
       } catch (err) {
         if (isAbortError(err)) {
           // Keep what was written so far. If nothing real arrived yet, say it was stopped.
@@ -364,7 +392,7 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
           result = { content: hasText ? partial : STOPPED_TEXT, cache: false, failed: !hasText };
         } else if (err instanceof TypeError) {
           // The network failed: fall back to the offline path.
-          result = await answerOffline(job, attachments, offlineHistory);
+          result = await answerOffline(job, attachments, offlineHistory, memoryContext);
         } else {
           console.error('Gemini call failed:', err);
           result = { content: 'Something went wrong reaching SMRT. Please try again.', cache: false, failed: true };
@@ -392,6 +420,17 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
 
   async function handleSend(text: string) {
     if (isLoading) return;
+
+    // Checks for something worth remembering across every future chat (e.g. "my name is ..."),
+    // separately from the answer itself — doesn't block sending either way.
+    saveMemoryFact(userId, text)
+      .then((saved) => {
+        if (!saved) return;
+        if (memoryBannerTimer.current) clearTimeout(memoryBannerTimer.current);
+        setMemoryBanner(saved);
+        memoryBannerTimer.current = setTimeout(() => setMemoryBanner(null), 4000);
+      })
+      .catch((err) => console.error('Saving a memory fact failed:', err));
 
     // Show the files attached to this message on the message itself.
     const attachedNames = pendingFiles.map((f) => f.name);
@@ -471,6 +510,12 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
         <div className="flex items-center justify-center gap-1.5 py-1 text-sm font-medium text-green-700">
           <CheckCircle2 size={14} />
           Offline AI downloaded and ready to use.
+        </div>
+      )}
+      {memoryBanner && (
+        <div className="flex items-center justify-center gap-1.5 py-1 text-sm font-medium text-blue-700">
+          <Brain size={14} />
+          Remembered: {memoryBanner}
         </div>
       )}
       {/* Download progress (or a failure message) — the download button itself is the header badge. */}

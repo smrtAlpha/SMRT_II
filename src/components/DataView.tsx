@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { MessageSquare, FileText, Paperclip, Sparkles } from 'lucide-react';
+import { MessageSquare, FileText, Paperclip, Sparkles, Brain, Trash2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { db } from '../lib/db';
 import { timeAgo } from '../lib/timeAgo';
@@ -26,6 +26,7 @@ export default function DataView({ userId }: Props) {
   const messages = useLiveQuery(() => db.messages.toCollection().filter((m) => m.userId === userId).toArray(), [userId]);
   const packs = useLiveQuery(() => db.knowledgePacks.where('userId').equals(userId).toArray(), [userId]);
   const attachmentCount = useLiveQuery(() => db.attachments.where('userId').equals(userId).count(), [userId]) ?? 0;
+  const memories = useLiveQuery(() => db.userMemory.where('userId').equals(userId).reverse().sortBy('timestamp'), [userId]);
 
   const chatCount = conversations?.length ?? 0;
   const userMessages = messages?.filter((m) => m.role === 'user').length ?? 0;
@@ -77,6 +78,31 @@ export default function DataView({ userId }: Props) {
                 latestActivity ? timeAgo(latestActivity) : '—'
               }.`}
         </p>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 p-4">
+        <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-slate-500">
+          <Brain size={14} />
+          What SMRT remembers about you
+        </h3>
+        {memories?.length === 0 && (
+          <p className="text-sm text-slate-400">Nothing yet — say something like "my name is..." in a chat.</p>
+        )}
+        <div className="flex flex-col gap-1.5">
+          {memories?.map((m) => (
+            <div key={m.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+              <span className="text-sm text-slate-700">{m.fact}</span>
+              <button
+                type="button"
+                onClick={() => db.userMemory.delete(m.id)}
+                aria-label="Forget this"
+                className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-200 hover:text-red-600"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   );

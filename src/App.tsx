@@ -43,13 +43,51 @@ function ComingSoonView({ view }: { view: View }) {
   );
 }
 
+// Remembers the last-open chat per user, so a page refresh returns to where you were instead of
+// showing a new chat. Scoped per user id so a guest's leftover id is never applied to an account.
+const ACTIVE_CHAT_KEY_PREFIX = 'smrt-active-conversation:';
+
+function readStoredActiveId(uid: string): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_CHAT_KEY_PREFIX + uid);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredActiveId(uid: string, id: string | null) {
+  try {
+    if (id) localStorage.setItem(ACTIVE_CHAT_KEY_PREFIX + uid, id);
+    else localStorage.removeItem(ACTIVE_CHAT_KEY_PREFIX + uid);
+  } catch {
+    // storage unavailable: skip
+  }
+}
+
+// Remembers which rail section (Chat/Friends/Write/Data/Files/Settings) was open, so a refresh
+// doesn't drop back to Chat. Not scoped per user — it's just UI navigation, not user data.
+const VIEW_STORAGE_KEY = 'smrt-active-view';
+const VALID_VIEWS: View[] = ['chat', 'notes', 'write', 'data', 'files', 'settings'];
+
+function readStoredView(): View {
+  try {
+    const stored = localStorage.getItem(VIEW_STORAGE_KEY);
+    return (VALID_VIEWS as string[]).includes(stored ?? '') ? (stored as View) : 'chat';
+  } catch {
+    return 'chat';
+  }
+}
+
 function App() {
   const { user, loading } = useAuth();
   const isOnline = useOnlineStatus();
   const localModel = useLocalModel();
   const cloudSync = useCloudSync(user, isOnline);
-  const [view, setView] = useState<View>('chat');
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [view, setViewState] = useState<View>(readStoredView);
+  const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
+  // Tracks which user id we've already tried to restore the last-open chat for, so it only happens
+  // once per sign-in/guest session rather than on every render.
+  const [restoredForUser, setRestoredForUser] = useState<string | null>(null);
   // Only matters on mobile, where the sidebar slides in as a drawer.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Shows the "Add a knowledge pack" pop-up.
@@ -65,6 +103,34 @@ function App() {
   const userId = user?.id ?? '';
   // A guest is someone who hasn't created an account or signed in yet.
   const isGuest = user?.is_anonymous !== false;
+
+  // Every change to the active chat is remembered for this user, so a refresh can restore it.
+  function setActiveConversationId(id: string | null) {
+    setActiveConversationIdState(id);
+    if (userId) writeStoredActiveId(userId, id);
+  }
+
+  function setView(next: View) {
+    setViewState(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // storage unavailable: skip
+    }
+  }
+
+  // Once per user id (covers page load and switching accounts), try to reopen the last chat —
+  // but only if it still exists, in case it was deleted or never synced to this device.
+  useEffect(() => {
+    if (!userId || restoredForUser === userId) return;
+    setRestoredForUser(userId);
+    const storedId = readStoredActiveId(userId);
+    if (!storedId) return;
+    db.conversations.get(storedId).then((conv) => {
+      if (conv) setActiveConversationIdState(storedId);
+      else writeStoredActiveId(userId, null);
+    });
+  }, [userId, restoredForUser]);
 
   // After signing in to an existing account, asks whether to add this device's guest chats to it.
   const { notice, clearNotice } = useAccountMigration(user);
