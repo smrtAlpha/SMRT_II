@@ -12,7 +12,7 @@ import AccountPanel from './components/AccountPanel';
 import SettingsView from './components/SettingsView';
 import FilesView from './components/FilesView';
 import DataView from './components/DataView';
-import WriteView from './components/writeView';
+import WriteView from './components/WriteView';
 import NotificationToggle from './components/NotificationToggle';
 import ResearchQueueForm from './components/ResearchQueueForm';
 import ResearchQueueList from './components/ResearchQueueList';
