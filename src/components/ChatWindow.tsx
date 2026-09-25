@@ -72,12 +72,11 @@ function buildAugmentedPrompt(
   const parts: string[] = [];
 
   // What's known about the user from other chats — applies regardless of which knowledge pack
-  // or attachment (if any) is also in play, so it's handled separately from those below. Kept as
-  // a short aside rather than an instructional paragraph: the offline model is a small 1B model,
-  // and a heavier block here was crowding out the actual question.
+  // or attachment (if any) is also in play, so it's handled separately from those below.
   if (memoryContext) {
-    const inline = memoryContext.replace(/^- /gm, '').replace(/\n/g, '; ');
-    parts.push(`(Known about the user: ${inline})`);
+    parts.push(
+      `What you know about the user from earlier conversations (bring these up only if relevant to the question):\n${memoryContext}`
+    );
   }
 
   if (pack || attachmentContext) {
