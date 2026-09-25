@@ -52,6 +52,9 @@ export default function Sidebar({
   const skipBlurSave = useRef(false);
   // Which chat is currently being turned into an offline Knowledge Pack.
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  // Search: filters the chat list below by title while open.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // While a menu is open: close it when you tap somewhere else, press Escape, scroll, or resize.
   useEffect(() => {
@@ -126,6 +129,15 @@ export default function Sidebar({
 
   const menuChat = menu ? conversations?.find((c) => c.id === menu.id) : undefined;
 
+  const visibleConversations = searchQuery.trim()
+    ? conversations?.filter((c) => (c.title || 'Untitled chat').toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : conversations;
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchQuery('');
+  }
+
   return (
     <>
       {/* Dark backdrop behind the drawer — mobile only */}
@@ -147,9 +159,13 @@ export default function Sidebar({
           <div className="flex items-center gap-1">
             <button
               type="button"
-              title="Search chats — coming soon"
+              onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+              title="Search chats"
               aria-label="Search chats"
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200"
+              aria-pressed={searchOpen}
+              className={`flex h-9 w-9 items-center justify-center rounded-lg hover:bg-slate-200 ${
+                searchOpen ? 'bg-slate-200 text-slate-700' : 'text-slate-500'
+              }`}
             >
               <Search size={18} />
             </button>
@@ -163,6 +179,23 @@ export default function Sidebar({
             </button>
           </div>
         </div>
+
+        {searchOpen && (
+          <div className="relative mb-3 shrink-0">
+            <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-slate-400" />
+            <input
+              autoFocus
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') closeSearch();
+              }}
+              placeholder="Search chats by title"
+              aria-label="Search chats"
+              className="w-full rounded-lg border border-slate-200 bg-white py-2 pr-2 pl-8 text-sm focus:border-blue-300 focus:outline-none"
+            />
+          </div>
+        )}
 
         <button
           type="button"
@@ -180,10 +213,14 @@ export default function Sidebar({
           <section className="flex min-h-0 flex-[68] flex-col">
             <h3 className="mb-2 shrink-0 text-sm font-medium text-slate-500">Recent Chats</h3>
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-              {conversations?.length === 0 && <p className="text-sm text-slate-400">No chats yet</p>}
+              {visibleConversations?.length === 0 && (
+                <p className="text-sm text-slate-400">
+                  {searchQuery.trim() ? `No chats match "${searchQuery.trim()}"` : 'No chats yet'}
+                </p>
+              )}
 
               <div className="flex flex-col gap-1">
-                {conversations?.map((c) => (
+                {visibleConversations?.map((c) => (
                   <div key={c.id} className="group relative" data-chat-menu>
                     {editingId === c.id ? (
                       <div className="flex items-center gap-3 rounded-xl bg-blue-50 py-2 pr-2 pl-2.5">

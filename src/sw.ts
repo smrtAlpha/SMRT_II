@@ -1,10 +1,16 @@
 /// <reference lib="webworker" />
-import { precacheAndRoute } from 'workbox-precaching';
+import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
+import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { db } from './lib/db';
 
 declare let self: ServiceWorkerGlobalScope;
 
 precacheAndRoute(self.__WB_MANIFEST);
+
+// Without this, precacheAndRoute alone won't serve the app shell for an actual page load/reload
+// (opening the installed PWA, or refreshing the tab) while offline — it only matches requests for
+// exact precached URLs, not the navigation request itself. This is what was causing the white screen.
+registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
 
 self.addEventListener('sync', (event: Event) => {
   const syncEvent = event as Event & { tag: string; waitUntil: (p: Promise<unknown>) => void };
