@@ -131,3 +131,4 @@ export default function WriteView({ userId }: Props) {
     </div>
   );
 }
+ 
