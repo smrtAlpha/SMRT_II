@@ -20,8 +20,11 @@ type Props = {
   onRemoveAttachment: (id: string) => void;
 };
 
+// Resting state is glassy (translucent + blurred) with a real slate border — a white border on a
+// pale page has no contrast, so the edge has to come from an actual color, not just transparency.
+// Hover goes fully opaque with a darker border and a shadow, both clear regardless of what's behind it.
 const PILL_BUTTON =
-  'flex h-10 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:px-4';
+  'flex h-10 items-center justify-center gap-2 rounded-full border border-slate-200/80 bg-white/50 px-3 text-sm font-medium text-slate-700 backdrop-blur-sm transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm sm:px-4';
 
 export default function MessageInput({
   onSend,
@@ -78,7 +81,10 @@ export default function MessageInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className="mx-auto mt-2 w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-3 shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100"
+      // Glass panel: translucent + blurred fill, a real slate border (not white-on-white, which
+      // has no contrast against a pale page) plus a bright inset top edge for the glass highlight,
+      // and a soft blue-tinted drop shadow with real, visible weight. Focus deepens all three.
+      className="mx-auto mt-2 w-full max-w-4xl rounded-2xl border border-slate-200/80 bg-white/55 p-3 backdrop-blur-2xl transition-all duration-200 [box-shadow:inset_0_1px_0_rgba(255,255,255,0.8),0_10px_30px_-10px_rgba(30,64,175,0.25)] focus-within:border-blue-300 focus-within:bg-white/85 focus-within:ring-2 focus-within:ring-blue-100 focus-within:[box-shadow:inset_0_1px_0_rgba(255,255,255,0.9),0_16px_40px_-12px_rgba(30,64,175,0.35)]"
     >
       <input
         ref={fileInputRef}
@@ -127,7 +133,9 @@ export default function MessageInput({
             type="button"
             onClick={openFilePicker}
             aria-label="Attach a file"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            // A dark tint at low opacity reads clearly regardless of what's behind it — more
+            // reliable on a glass/translucent parent than a light grey fill would be.
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-900/8 hover:text-slate-700"
           >
             <Paperclip size={18} />
           </button>
@@ -190,7 +198,7 @@ export default function MessageInput({
               type="button"
               onClick={onStop}
               aria-label="Stop"
-              className="flex h-10 items-center justify-center gap-2 rounded-full bg-slate-800 px-3 text-sm font-medium text-white hover:bg-slate-900 sm:px-5"
+              className="flex h-10 items-center justify-center gap-2 rounded-full bg-slate-800 px-3 text-sm font-medium text-white transition-transform hover:bg-slate-900 active:scale-95 sm:px-5"
             >
               <Square size={14} className="fill-current" />
               <span className="hidden sm:inline">Stop</span>
@@ -200,7 +208,7 @@ export default function MessageInput({
               type="submit"
               disabled={readingFile}
               aria-label="Send"
-              className="flex h-10 items-center justify-center gap-2 rounded-full bg-blue-700 px-3 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5"
+              className="flex h-10 items-center justify-center gap-2 rounded-full bg-blue-700 px-3 text-sm font-medium text-white transition-transform hover:bg-blue-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 sm:px-5"
             >
               <ArrowUp size={16} />
               <span className="hidden sm:inline">Send</span>

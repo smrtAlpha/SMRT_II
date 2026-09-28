@@ -212,7 +212,7 @@ function App() {
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-white md:flex-row">
+    <div className="flex h-dvh flex-col bg-[radial-gradient(ellipse_at_top_left,_#eff6ff_0%,_#ffffff_45%,_#eef2ff_100%)] md:flex-row">
       <IconRail view={view} onSelectView={setView} email={user?.email ?? null} isGuest={isGuest} onOpenAccount={() => setShowAccount(true)} />
       {view === 'chat' && (
         <Sidebar
@@ -227,7 +227,7 @@ function App() {
           onOpenAccount={() => setShowAccount(true)}
         />
       )}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-slate-50/60">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopBar
           localModel={localModel}
           isOnline={isOnline}

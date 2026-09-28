@@ -79,7 +79,7 @@ export default function TopBar({ localModel, isOnline, cloudSync, onOpenMenu, is
             : 'Not synced yet — tap to sync';
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 md:h-16 md:px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white/75 px-3 backdrop-blur-md md:h-16 md:px-6">
       <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
