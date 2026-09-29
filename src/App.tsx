@@ -212,7 +212,7 @@ function App() {
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-[radial-gradient(ellipse_at_top_left,_#eff6ff_0%,_#ffffff_45%,_#eef2ff_100%)] md:flex-row">
+    <div className="flex h-dvh flex-col bg-[radial-gradient(ellipse_at_top_left,_#c7d2fe_0%,_#dbeafe_35%,_#f8fafc_70%,_#ffffff_100%)] dark:bg-[radial-gradient(ellipse_at_top_left,_#1e2c5c_0%,_#111a38_38%,_#0b1220_72%,_#0a0f1c_100%)] md:flex-row">
       <IconRail view={view} onSelectView={setView} email={user?.email ?? null} isGuest={isGuest} onOpenAccount={() => setShowAccount(true)} />
       {view === 'chat' && (
         <Sidebar

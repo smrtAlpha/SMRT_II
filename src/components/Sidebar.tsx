@@ -150,12 +150,12 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] flex-col overflow-hidden border-r border-slate-200 bg-slate-50 p-4 transition-transform duration-200 md:static md:z-auto md:w-64 md:max-w-none md:shrink-0 md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] flex-col overflow-hidden border-r border-slate-200 bg-white/70 p-4 backdrop-blur-xl transition-transform duration-200 md:static md:z-auto md:w-64 md:max-w-none md:shrink-0 md:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <div className="mb-4 flex shrink-0 items-center justify-between">
-          <h1 className="text-xl font-bold text-blue-950">SMRT</h1>
+          <h1 className="bg-gradient-to-br from-blue-700 to-indigo-900 bg-clip-text text-xl font-bold text-transparent dark:from-blue-300 dark:to-indigo-200">SMRT</h1>
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -192,7 +192,7 @@ export default function Sidebar({
               }}
               placeholder="Search chats by title"
               aria-label="Search chats"
-              className="w-full rounded-lg border border-slate-200 bg-white py-2 pr-2 pl-8 text-sm focus:border-blue-300 focus:outline-none"
+              className="w-full rounded-lg border border-slate-200 bg-white/70 py-2 pr-2 pl-8 text-sm backdrop-blur-sm transition-colors focus:border-blue-300 focus:bg-white focus:outline-none"
             />
           </div>
         )}
@@ -200,7 +200,7 @@ export default function Sidebar({
         <button
           type="button"
           onClick={() => choose(null)}
-          className="mb-4 flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 py-2.5 font-medium text-white hover:bg-blue-700"
+          className="mb-4 flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-blue-600 to-blue-700 py-2.5 font-medium text-white shadow-sm shadow-blue-900/20 transition-all hover:from-blue-500 hover:to-blue-600 hover:shadow-md hover:shadow-blue-900/25 active:scale-[0.98]"
         >
           <Plus size={16} />
           New Chat
@@ -211,8 +211,15 @@ export default function Sidebar({
             Each one scrolls on its own. */}
         <div className="flex min-h-0 flex-1 flex-col">
           <section className="flex min-h-0 flex-[68] flex-col">
-            <h3 className="mb-2 shrink-0 text-sm font-medium text-slate-500">Recent Chats</h3>
-            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <h3 className="mb-2 shrink-0 text-xs font-semibold tracking-wide text-slate-400 uppercase">Recent Chats</h3>
+            <div
+              className="min-h-0 flex-1 overflow-y-auto pr-1"
+              style={{
+                maskImage: 'linear-gradient(to bottom, transparent, black 10px, black calc(100% - 10px), transparent)',
+                WebkitMaskImage:
+                  'linear-gradient(to bottom, transparent, black 10px, black calc(100% - 10px), transparent)',
+              }}
+            >
               {visibleConversations?.length === 0 && (
                 <p className="text-sm text-slate-400">
                   {searchQuery.trim() ? `No chats match "${searchQuery.trim()}"` : 'No chats yet'}
@@ -256,11 +263,21 @@ export default function Sidebar({
                         <button
                           type="button"
                           onClick={() => choose(c.id)}
-                          className={`flex w-full items-center gap-3 rounded-xl py-2 pr-9 pl-2.5 text-left ${
-                            c.id === activeConversationId ? 'bg-blue-100' : 'hover:bg-slate-100'
+                          className={`relative flex w-full items-center gap-3 rounded-xl py-2 pr-9 pl-3.5 text-left transition-colors duration-150 ${
+                            c.id === activeConversationId
+                              ? 'bg-blue-50/80 text-blue-950'
+                              : 'hover:bg-slate-100/80'
                           }`}
                         >
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                          {/* Active-chat accent: a short bar rather than just a fill, so "you are here" reads at a glance. */}
+                          {c.id === activeConversationId && (
+                            <span className="absolute top-1/2 left-0 h-5 w-1 -translate-y-1/2 rounded-full bg-blue-600" />
+                          )}
+                          <span
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+                              c.id === activeConversationId ? 'bg-white text-blue-600 shadow-xs' : 'bg-blue-50 text-blue-600'
+                            }`}
+                          >
                             <MessageSquare size={16} />
                           </span>
                           <span className="min-w-0">

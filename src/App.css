@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 
+/* Dark mode is switched by a `dark` class on <html> (set by src/lib/theme.ts), not by the OS setting
+   directly. That's what lets one toggle override the system setting, while "System" mode still
+   follows it automatically. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @keyframes fadeInUp {
   from {
     opacity: 0;
@@ -33,3 +38,149 @@ body {
 body {
   -webkit-tap-highlight-color: transparent;
 }
+
+::selection {
+  background: rgb(59 130 246 / 0.28);
+}
+
+/* Native controls (scrollbars, form widgets, autofill) follow the theme too. */
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+
+/* ------------------------------------------------------------------------------------------
+   Dark palette
+   ------------------------------------------------------------------------------------------
+   The app is written with Tailwind's default palette (bg-white, text-slate-700, bg-blue-50 ...).
+   Rather than add a `dark:` variant to hundreds of classes, the palette itself is remapped here
+   when <html> has `.dark`. Utilities read these variables, so every existing class picks up the
+   dark value automatically, and any new component works in dark mode without extra work.
+
+   Ramp, lowest to highest:  page gradient  <  white (cards)  <  slate-50  <  slate-100  <  slate-200
+   Text ramp is inverted: slate-900 is now the brightest text, slate-400 the dimmest.            */
+html.dark {
+  --color-white: #141d31;
+  --color-slate-50: #182339;
+  --color-slate-100: #1d2a45;
+  --color-slate-200: #283753;
+  --color-slate-300: #384866;
+  --color-slate-400: #7d8ba3;
+  --color-slate-500: #9aa8bd;
+  --color-slate-600: #b4c0d2;
+  --color-slate-700: #cbd5e1;
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #f1f5f9;
+  --color-slate-950: #f8fafc;
+
+  /* Pale tints used as fills/borders become deep tints. */
+  --color-blue-50: #0f1d3a;
+  --color-blue-100: #172d57;
+  --color-blue-200: #27427a;
+  --color-blue-300: #3b6fd4;
+  --color-blue-900: #dbeafe; /* only ever used as text in this app */
+  --color-blue-950: #e6efff; /* only ever used as text in this app */
+  --color-red-50: #2c1418;
+  --color-red-100: #3d1b21;
+  --color-red-300: #8a2f3a;
+  --color-green-50: #0e2a1d;
+  --color-amber-50: #2b210a;
+  --color-amber-100: #3a2c0b;
+}
+
+/* ------------------------------------------------------------------------------------------
+   Exceptions to the remap
+   ------------------------------------------------------------------------------------------
+   A palette remap can't handle a shade that is used as BOTH a text color and a background:
+   flipping it fixes one and breaks the other. These are the places that needed it, found by
+   auditing every color class in the app. (Unlayered rules like these beat Tailwind's layered
+   utilities regardless of specificity, so no !important is needed.)                            */
+
+/* white is remapped to a dark surface, but `text-white` on blue/grey buttons must stay white. */
+html.dark .text-white {
+  color: #fff;
+}
+
+/* Saturated blues/reds/greens/ambers are used as button backgrounds AND as text on pale tints. Keep
+   the backgrounds as-is and lighten only the text so it reads on the deep tints. */
+html.dark .text-blue-600 {
+  color: #60a5fa;
+}
+html.dark .text-blue-700 {
+  color: #7cb2fb;
+}
+html.dark .text-blue-800 {
+  color: #a5c8fd;
+}
+html.dark .text-red-600,
+html.dark .hover\:text-red-600:hover {
+  color: #f87171;
+}
+html.dark .text-red-700 {
+  color: #fca5a5;
+}
+html.dark .text-green-600 {
+  color: #4ade80;
+}
+html.dark .text-green-700 {
+  color: #86efac;
+}
+html.dark .text-green-800,
+html.dark .text-green-900 {
+  color: #a7f3c4;
+}
+html.dark .hover\:text-green-900:hover {
+  color: #d1fae5;
+}
+html.dark .text-amber-600,
+html.dark .text-amber-700 {
+  color: #fbbf24;
+}
+html.dark .text-amber-800 {
+  color: #fcd34d;
+}
+
+/* Links inside rendered answers (set through an arbitrary child variant on the wrapper). */
+html.dark [class*='[&_a]:text-blue-600'] a {
+  color: #60a5fa;
+}
+
+/* Dark slate used as a BACKGROUND must stay dark: the Stop button, code blocks, modal backdrops. */
+html.dark .bg-slate-800 {
+  background-color: #3f4d69;
+}
+html.dark .hover\:bg-slate-900:hover {
+  background-color: #4c5b79;
+}
+html.dark .bg-slate-900\/40 {
+  background-color: rgb(2 6 16 / 0.6);
+}
+html.dark pre {
+  background-color: #060b16;
+  color: #e2e8f0;
+}
+
+/* ------------------------------------------------------------------------------------------
+   Theme switch + reduced motion
+   ------------------------------------------------------------------------------------------ */
+
+/* Briefly added by theme.ts when the theme changes, so colors cross-fade instead of snapping. */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 0.3s ease, border-color 0.3s ease,
+    color 0.3s ease, fill 0.3s ease, stroke 0.3s ease, box-shadow 0.3s ease !important;
+}
+
+/* Entrance animations are decoration, so they're switched off for people who ask for less motion.
+   (Spinners are left alone: they're feedback that something is happening.) */
+@media (prefers-reduced-motion: reduce) {
+  [class*='fadeInUp'],
+  [class*='bounce-dot'] {
+    animation: none !important;
+  }
+}
+

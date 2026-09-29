@@ -1,5 +1,6 @@
-import { Menu, Download, Loader2, RefreshCw, LogIn, FolderOpen, TriangleAlert } from 'lucide-react';
+import { Menu, Download, Loader2, RefreshCw, LogIn, FolderOpen, TriangleAlert, Sun, Moon } from 'lucide-react';
 import InstallButton from './InstallButton';
+import { useTheme } from '../lib/theme';
 import type { useLocalModel } from '../lib/useLocalModel';
 import type { useCloudSync } from '../lib/useCloudSync';
 
@@ -54,6 +55,7 @@ function OfflineAiBadge({ localModel }: { localModel: LocalModel }) {
 }
 
 export default function TopBar({ localModel, isOnline, cloudSync, onOpenMenu, isGuest, onOpenAccount }: Props) {
+  const { isDark, toggle } = useTheme();
   const syncDisabled = isGuest || !isOnline || cloudSync.syncing;
 
   const syncDot = isGuest
@@ -95,6 +97,25 @@ export default function TopBar({ localModel, isOnline, cloudSync, onOpenMenu, is
 
       <div className="flex shrink-0 items-center gap-2">
         <InstallButton />
+
+        {/* Quick light/dark flip. The two icons cross-fade and turn into each other. Choosing
+            "System" (follow the device automatically) is done in Settings. */}
+        <button
+          type="button"
+          onClick={toggle}
+          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-xs transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
+        >
+          <Sun
+            size={17}
+            className={`absolute transition-all duration-300 ${isDark ? 'rotate-0 scale-100 opacity-100' : '-rotate-90 scale-50 opacity-0'}`}
+          />
+          <Moon
+            size={17}
+            className={`absolute transition-all duration-300 ${isDark ? 'rotate-90 scale-50 opacity-0' : 'rotate-0 scale-100 opacity-100'}`}
+          />
+        </button>
 
         <button
           type="button"

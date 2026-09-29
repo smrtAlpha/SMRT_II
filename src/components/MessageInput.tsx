@@ -84,7 +84,7 @@ export default function MessageInput({
       // Glass panel: translucent + blurred fill, a real slate border (not white-on-white, which
       // has no contrast against a pale page) plus a bright inset top edge for the glass highlight,
       // and a soft blue-tinted drop shadow with real, visible weight. Focus deepens all three.
-      className="mx-auto mt-2 w-full max-w-4xl rounded-2xl border border-slate-200/80 bg-white/55 p-3 backdrop-blur-2xl transition-all duration-200 [box-shadow:inset_0_1px_0_rgba(255,255,255,0.8),0_10px_30px_-10px_rgba(30,64,175,0.25)] focus-within:border-blue-300 focus-within:bg-white/85 focus-within:ring-2 focus-within:ring-blue-100 focus-within:[box-shadow:inset_0_1px_0_rgba(255,255,255,0.9),0_16px_40px_-12px_rgba(30,64,175,0.35)]"
+      className="mx-auto mt-2 w-full max-w-4xl rounded-2xl border border-slate-200/80 bg-white/55 p-3 backdrop-blur-2xl transition-all duration-200 [box-shadow:inset_0_1px_0_rgba(255,255,255,0.8),0_10px_30px_-10px_rgba(30,64,175,0.25)] focus-within:border-blue-300 focus-within:bg-white/85 focus-within:ring-2 focus-within:ring-blue-100 focus-within:[box-shadow:inset_0_1px_0_rgba(255,255,255,0.9),0_16px_40px_-12px_rgba(30,64,175,0.35)] dark:[box-shadow:inset_0_1px_0_rgba(255,255,255,0.07),0_10px_30px_-10px_rgba(0,0,0,0.6)] dark:focus-within:[box-shadow:inset_0_1px_0_rgba(255,255,255,0.1),0_16px_40px_-12px_rgba(37,99,235,0.4)]"
     >
       <input
         ref={fileInputRef}
