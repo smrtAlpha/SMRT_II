@@ -25,6 +25,7 @@ import { useCloudSync } from './lib/useCloudSync';
 import { takeAuthRedirectError } from './lib/authRedirectError';
 import { useLaunchPrompt } from './lib/useLaunchPrompt';
 import { useLocalModel } from './lib/useLocalModel';
+import { useFriendOutbox } from './lib/friendChat';
 import { db } from './lib/db';
 import { WifiOff } from 'lucide-react';
 import './App.css';
@@ -69,6 +70,8 @@ function App() {
   const isOnline = useOnlineStatus();
   const localModel = useLocalModel();
   const cloudSync = useCloudSync(user, isOnline);
+  // Friends messages written offline go out as soon as there's a connection, whichever tab is open.
+  useFriendOutbox(user && user.is_anonymous === false ? user.id : null, isOnline);
   const [view, setViewState] = useState<View>(readStoredView);
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
   // Tracks which user id we've already tried to restore the last-open chat for, so it only happens

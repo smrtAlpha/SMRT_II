@@ -20,17 +20,24 @@ export type ChatSummary = {
 
 export type Outcome<T> = { ok: true; data: T } | { ok: false; message: string };
 
+export const OFFLINE_MESSAGE = "You're offline. Connect to the internet to use Friends.";
+
+// True when a failure was just "no connection" (worth retrying later) rather than the server saying no.
+export function isOfflineMessage(message: string): boolean {
+  return message === OFFLINE_MESSAGE;
+}
+
 // Turns a failure into words a person can act on. The server's own messages (taken username,
 // blocked, too fast...) are already written in plain language, so they pass straight through.
 function friendlyError(err: { message?: string } | null | undefined): string {
   const message = err?.message ?? '';
   if (!navigator.onLine || /failed to fetch|networkerror|load failed/i.test(message)) {
-    return "You're offline. Connect to the internet to use Friends.";
+    return OFFLINE_MESSAGE;
   }
   return message || 'Something went wrong. Please try again.';
 }
 
-async function run<T>(call: () => PromiseLike<{ data: unknown; error: { message?: string } | null }>): Promise<Outcome<T>> {
+export async function callServer<T>(call: () => PromiseLike<{ data: unknown; error: { message?: string } | null }>): Promise<Outcome<T>> {
   try {
     const { data, error } = await call();
     if (error) return { ok: false, message: friendlyError(error) };
@@ -43,28 +50,28 @@ async function run<T>(call: () => PromiseLike<{ data: unknown; error: { message?
 
 // null = this account hasn't chosen a username yet.
 export function getMyProfile(userId: string) {
-  return run<Profile | null>(() =>
+  return callServer<Profile | null>(() =>
     supabase.from('profiles').select('user_id, username, display_name').eq('user_id', userId).maybeSingle()
   );
 }
 
 export function saveProfile(username: string, displayName: string) {
-  return run<Profile>(() =>
+  return callServer<Profile>(() =>
     supabase.rpc('set_profile', { p_username: username, p_display_name: displayName.trim() || null })
   );
 }
 
 export function searchUsers(query: string) {
-  return run<Profile[]>(() => supabase.rpc('search_users', { p_query: query }));
+  return callServer<Profile[]>(() => supabase.rpc('search_users', { p_query: query }));
 }
 
 // Starts (or reopens) a one-to-one chat. Returns the chat id.
 export function startDirectChat(otherUserId: string) {
-  return run<string>(() => supabase.rpc('start_direct_chat', { p_other: otherUserId }));
+  return callServer<string>(() => supabase.rpc('start_direct_chat', { p_other: otherUserId }));
 }
 
 export function loadMyChats() {
-  return run<ChatSummary[]>(() => supabase.rpc('my_chats'));
+  return callServer<ChatSummary[]>(() => supabase.rpc('my_chats'));
 }
 
 // "Ada Obi" if they set a display name, otherwise "@ada".

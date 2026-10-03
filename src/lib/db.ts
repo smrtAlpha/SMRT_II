@@ -76,6 +76,33 @@ export interface UserMemory {
   timestamp: number;
 }
 
+// A message in a Friends chat, saved on this device so the chat opens instantly and can be read offline.
+export interface FriendMessage {
+  id: string;
+  chatId: string;
+  // Whose device copy this is (the signed-in person), so a sign-out can wipe exactly their copy.
+  userId: string;
+  // Who wrote it. null = that person has since deleted their account.
+  senderId: string | null;
+  // The writer's name as last seen, so a group chat can still show who said what while offline.
+  senderName?: string;
+  body: string;
+  createdAt: number;
+}
+
+// A Friends message that has been written but not yet accepted by the server (usually because
+// there's no connection). Its id is also the message's id on the server, so sending it twice
+// can never create a duplicate.
+export interface FriendOutboxItem {
+  id: string;
+  chatId: string;
+  userId: string;
+  body: string;
+  createdAt: number;
+  // Set if the server refused it (blocked, sending too fast...). It then waits for Retry or Delete.
+  error?: string;
+}
+
 class SmrtDatabase extends Dexie {
   qaHistory!: Table<QARecord, string>;
   knowledgePacks!: Table<KnowledgePack, string>;
@@ -85,6 +112,8 @@ class SmrtDatabase extends Dexie {
   attachments!: Table<Attachment, string>;
   documents!: Table<Document, string>;
   userMemory!: Table<UserMemory, string>;
+  friendMessages!: Table<FriendMessage, string>;
+  friendOutbox!: Table<FriendOutboxItem, string>;
 
   constructor() {
     super('smrt-db');
@@ -145,10 +174,33 @@ class SmrtDatabase extends Dexie {
       documents: 'id, userId, updatedAt',
       userMemory: 'id, userId, kind, timestamp',
     });
+    // v9: Friends — a saved copy of chat messages, and messages waiting to be sent.
+    this.version(9).stores({
+      qaHistory: 'id, userId, timestamp',
+      knowledgePacks: 'id, userId, subject, timestamp',
+      researchQueue: 'id, userId, status, createdAt',
+      conversations: 'id, userId, updatedAt',
+      messages: 'id, conversationId, timestamp',
+      attachments: 'id, conversationId, userId, timestamp',
+      documents: 'id, userId, updatedAt',
+      userMemory: 'id, userId, kind, timestamp',
+      friendMessages: 'id, userId, chatId, createdAt',
+      friendOutbox: 'id, userId, chatId, createdAt',
+    });
   }
 }
 
 export const db = new SmrtDatabase();
+
+// If another tab opens with a newer version of this database (e.g. after a redeploy), IndexedDB
+// blocks that tab's upgrade until every other open connection is closed. Without this, an older
+// tab left open would silently block a newer tab forever — the newer tab just stays blank, with
+// no error, since it's not stuck failing, just stuck waiting. Closing here lets the other tab
+// proceed immediately, and reloading brings this tab's own code up to date too.
+db.on('versionchange', () => {
+  db.close();
+  window.location.reload();
+});
 
 // Wipes every local table. Used on sign-out so nothing from the session that just ended
 // (chats, knowledge packs, attachments, etc.) is still sitting in IndexedDB afterwards —
@@ -163,7 +215,18 @@ export async function wipeLocalData(): Promise<void> {
 export async function wipeUserData(userId: string): Promise<void> {
   await db.transaction(
     'rw',
-    [db.qaHistory, db.knowledgePacks, db.researchQueue, db.conversations, db.messages, db.attachments, db.documents, db.userMemory],
+    [
+      db.qaHistory,
+      db.knowledgePacks,
+      db.researchQueue,
+      db.conversations,
+      db.messages,
+      db.attachments,
+      db.documents,
+      db.userMemory,
+      db.friendMessages,
+      db.friendOutbox,
+    ],
     async () => {
       await db.conversations.where('userId').equals(userId).delete();
       await db.qaHistory.where('userId').equals(userId).delete();
@@ -172,6 +235,8 @@ export async function wipeUserData(userId: string): Promise<void> {
       await db.attachments.where('userId').equals(userId).delete();
       await db.documents.where('userId').equals(userId).delete();
       await db.userMemory.where('userId').equals(userId).delete();
+      await db.friendMessages.where('userId').equals(userId).delete();
+      await db.friendOutbox.where('userId').equals(userId).delete();
       // Messages don't have an index on userId, so look through them all.
       await db.messages
         .toCollection()
