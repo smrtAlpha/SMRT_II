@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { wipeUserData } from './db';
 import type { User } from '@supabase/supabase-js';
 
 // "create": turn the current guest into a real account (keeps the same ID, so nothing is lost).
@@ -132,4 +133,37 @@ export async function checkEmailConfirmed(): Promise<boolean> {
 // Signs out on this device only (other devices stay signed in).
 export async function signOutHere() {
   await supabase.auth.signOut({ scope: 'local' });
+}
+
+// Permanently deletes the signed-in account: the login itself and everything synced to the cloud
+// (chats, files, packs, documents, memory), then clears this account's data from this device.
+// The server does the real deletion (a browser isn't allowed to delete a login account).
+export async function deleteMyAccount(user: User): Promise<Result> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return { ok: false, message: 'Your session has expired. Please sign in again.' };
+
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-account`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ confirm: 'DELETE' }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      return { ok: false, message: typeof data?.error === 'string' ? data.error : `Could not delete the account (${res.status}).` };
+    }
+
+    // The cloud copy is gone. Now remove this account's data from this device, then drop the dead session.
+    await wipeUserData(user.id);
+    await supabase.auth.signOut({ scope: 'local' });
+    return { ok: true };
+  } catch (err) {
+    console.error('Account deletion failed:', err);
+    return { ok: false, message: "Couldn't reach the server. Check your connection and try again." };
+  }
 }

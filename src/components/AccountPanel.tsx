@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Loader2, LogOut, Mail } from 'lucide-react';
+import { Loader2, LogOut, Mail, Trash2 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
-import { startGoogle, sendEmailCode, verifyEmailCode, checkEmailConfirmed, signOutHere } from '../lib/account';
+import { startGoogle, sendEmailCode, verifyEmailCode, checkEmailConfirmed, signOutHere, deleteMyAccount } from '../lib/account';
 import type { Mode } from '../lib/account';
 
 type Props = {
@@ -54,6 +54,11 @@ export default function AccountPanel({ user, startError = '', onClose, onSignedO
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(startError);
   const [info, setInfo] = useState('');
+  // Deleting the account: first tap opens the warning, then you have to type DELETE.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteText, setDeleteText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   // While waiting for you to tap the link in the email (creating an account), keep checking whether
   // it has been confirmed, even if you opened the link in another browser.
@@ -123,6 +128,21 @@ export default function AccountPanel({ user, startError = '', onClose, onSignedO
     onClose();
   }
 
+  async function handleDeleteAccount() {
+    if (!user || deleteText.trim() !== 'DELETE') return;
+    setDeleting(true);
+    setDeleteError('');
+    const result = await deleteMyAccount(user);
+    setDeleting(false);
+    if (!result.ok) {
+      setDeleteError(result.message);
+      return;
+    }
+    // Same as signing out: the app leaves the chat that was open and starts a fresh guest session.
+    onSignedOut?.();
+    onClose();
+  }
+
   // ---------- Signed in ----------
   if (user && user.is_anonymous === false) {
     const providers = (user.identities ?? []).map((i) => i.provider);
@@ -146,6 +166,62 @@ export default function AccountPanel({ user, startError = '', onClose, onSignedO
           <LogOut size={16} />
           Sign out
         </button>
+
+        {!deleteOpen ? (
+          <button
+            type="button"
+            onClick={() => setDeleteOpen(true)}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+          >
+            <Trash2 size={14} />
+            Delete account
+          </button>
+        ) : (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3">
+            <p className="text-sm font-medium text-red-800">Delete your account for good?</p>
+            <p className="mt-1 text-xs text-red-700">
+              This permanently removes your account and everything saved in the cloud: chats, files, knowledge packs,
+              documents and what SMRT remembers about you. It is also removed from this device. Other devices keep any
+              local copy until you sign out there. This can&apos;t be undone.
+            </p>
+            <label className="mt-3 block text-xs text-red-800" htmlFor="delete-confirm">
+              Type <span className="font-semibold">DELETE</span> to confirm
+            </label>
+            <input
+              id="delete-confirm"
+              value={deleteText}
+              onChange={(e) => setDeleteText(e.target.value)}
+              autoComplete="off"
+              autoCapitalize="characters"
+              disabled={deleting}
+              className="mt-1 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm focus:border-red-400 focus:ring-2 focus:ring-red-100 focus:outline-none disabled:opacity-50"
+            />
+            {deleteError && <p className="mt-2 text-xs text-red-700">{deleteError}</p>}
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteOpen(false);
+                  setDeleteText('');
+                  setDeleteError('');
+                }}
+                disabled={deleting}
+                className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleting || deleteText.trim() !== 'DELETE'}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleting && <Loader2 size={14} className="animate-spin" />}
+                Delete forever
+              </button>
+            </div>
+          </div>
+        )}
         <p className="mt-4 text-center text-xs text-slate-400">Session ID: {user.id.slice(0, 8)}</p>
         <p className="mt-1 text-center">
           <PrivacyLink />
