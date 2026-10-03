@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { ArrowLeft, Loader2, MessageCircle, Pencil, Search, Users, WifiOff, X } from 'lucide-react';
 import { timeAgo } from '../lib/timeAgo';
+import FriendChat from './FriendChat';
 import {
   chatTitle,
   getMyProfile,
@@ -486,14 +487,29 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
                 <ArrowLeft size={18} />
               </button>
               <Avatar name={selectedChat ? chatTitle(selectedChat) : 'Chat'} group={selectedChat?.kind === 'group'} />
-              <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
-                {selectedChat ? chatTitle(selectedChat) : 'Chat'}
-              </p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-slate-800">
+                  {selectedChat ? chatTitle(selectedChat) : 'Chat'}
+                </p>
+                {selectedChat && (
+                  <p className="truncate text-xs text-slate-400">
+                    {selectedChat.kind === 'group'
+                      ? `${selectedChat.member_count} ${selectedChat.member_count === 1 ? 'member' : 'members'}`
+                      : selectedChat.other_username
+                        ? `@${selectedChat.other_username}`
+                        : ''}
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center text-slate-400">
-              <MessageCircle size={28} />
-              <p className="text-sm">The chat is created. Sending and reading messages arrives in the next update.</p>
-            </div>
+            <FriendChat
+              key={selectedChatId}
+              chatId={selectedChatId}
+              userId={profile.user_id}
+              isOnline={isOnline}
+              isGroup={selectedChat?.kind === 'group'}
+              readOnly={!!selectedChat && selectedChat.kind === 'direct' && !selectedChat.other_user_id}
+            />
           </>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-slate-400">
