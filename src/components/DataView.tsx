@@ -96,6 +96,7 @@ export default function DataView({ userId }: Props) {
               <button
                 type="button"
                 onClick={async () => {
+                  if (!window.confirm('Forget this? SMRT will stop using it in answers.')) return;
                   await db.userMemory.delete(m.id);
                   deleteMemoryFromCloud(m.id);
                 }}

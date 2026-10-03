@@ -252,29 +252,32 @@ function App() {
             </div>
           )}
 
-          {view === 'chat' && (
-            <ChatWindow
-              userId={userId}
-              conversationId={activeConversationId}
-              onNewConversation={setActiveConversationId}
-              localModel={localModel}
-            />
-          )}
-          {view === 'settings' && (
-            <SettingsView user={user} localModel={localModel} onSignedOut={() => setActiveConversationId(null)} />
-          )}
-          {view === 'files' && (
-            <FilesView
-              userId={userId}
-              onOpenConversation={(id) => {
-                setActiveConversationId(id);
-                setView('chat');
-              }}
-            />
-          )}
-          {view === 'data' && <DataView userId={userId} />}
-          {view === 'write' && <WriteView userId={userId} />}
-          {view === 'notes' && <ComingSoonView view={view} />}
+          {/* Keyed by section, so switching sections remounts this wrapper and replays the fade. */}
+          <div key={view} className="flex min-h-0 flex-1 flex-col animate-[viewFade_0.22s_ease-out]">
+            {view === 'chat' && (
+              <ChatWindow
+                userId={userId}
+                conversationId={activeConversationId}
+                onNewConversation={setActiveConversationId}
+                localModel={localModel}
+              />
+            )}
+            {view === 'settings' && (
+              <SettingsView user={user} localModel={localModel} onSignedOut={() => setActiveConversationId(null)} />
+            )}
+            {view === 'files' && (
+              <FilesView
+                userId={userId}
+                onOpenConversation={(id) => {
+                  setActiveConversationId(id);
+                  setView('chat');
+                }}
+              />
+            )}
+            {view === 'data' && <DataView userId={userId} />}
+            {view === 'write' && <WriteView userId={userId} />}
+            {view === 'notes' && <ComingSoonView view={view} />}
+          </div>
         </div>
         <StatusBar isOnline={isOnline} pendingCount={pendingCount} onOpenQueue={() => setShowQueue(true)} />
       </div>

@@ -16,6 +16,18 @@
   }
 }
 
+/* Section switch (Chat / Write / Data / Files / Settings): a quick fade with a tiny rise. */
+@keyframes viewFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes bounce-dot {
   0%,
   80%,
@@ -179,8 +191,8 @@ html.theme-transition *::after {
    (Spinners are left alone: they're feedback that something is happening.) */
 @media (prefers-reduced-motion: reduce) {
   [class*='fadeInUp'],
+  [class*='viewFade'],
   [class*='bounce-dot'] {
     animation: none !important;
   }
 }
-
