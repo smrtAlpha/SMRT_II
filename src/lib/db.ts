@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import type { ChatSummary } from './friends';
 
 export interface QARecord {
   id: string;
@@ -103,6 +104,26 @@ export interface FriendOutboxItem {
   error?: string;
 }
 
+// Text typed into a Friends chat but not sent yet, so a reload doesn't lose it.
+export interface FriendDraft {
+  chatId: string;
+  userId: string;
+  text: string;
+  updatedAt: number;
+}
+
+// The Friends chat list as last loaded, so Friends still opens (and shows your chats) offline.
+export interface FriendChatRow extends ChatSummary {
+  userId: string;
+}
+
+// Your own Friends username, saved so Friends doesn't need the internet just to know who you are.
+export interface FriendProfileRow {
+  userId: string;
+  username: string;
+  displayName: string | null;
+}
+
 class SmrtDatabase extends Dexie {
   qaHistory!: Table<QARecord, string>;
   knowledgePacks!: Table<KnowledgePack, string>;
@@ -114,6 +135,9 @@ class SmrtDatabase extends Dexie {
   userMemory!: Table<UserMemory, string>;
   friendMessages!: Table<FriendMessage, string>;
   friendOutbox!: Table<FriendOutboxItem, string>;
+  friendChats!: Table<FriendChatRow, string>;
+  friendProfiles!: Table<FriendProfileRow, string>;
+  friendDrafts!: Table<FriendDraft, string>;
 
   constructor() {
     super('smrt-db');
@@ -187,6 +211,37 @@ class SmrtDatabase extends Dexie {
       friendMessages: 'id, userId, chatId, createdAt',
       friendOutbox: 'id, userId, chatId, createdAt',
     });
+    // v10: Friends — the saved chat list and your own username, for opening Friends offline.
+    this.version(10).stores({
+      qaHistory: 'id, userId, timestamp',
+      knowledgePacks: 'id, userId, subject, timestamp',
+      researchQueue: 'id, userId, status, createdAt',
+      conversations: 'id, userId, updatedAt',
+      messages: 'id, conversationId, timestamp',
+      attachments: 'id, conversationId, userId, timestamp',
+      documents: 'id, userId, updatedAt',
+      userMemory: 'id, userId, kind, timestamp',
+      friendMessages: 'id, userId, chatId, createdAt',
+      friendOutbox: 'id, userId, chatId, createdAt',
+      friendChats: 'chat_id, userId',
+      friendProfiles: 'userId',
+    });
+    // v11: Friends — unsent message drafts.
+    this.version(11).stores({
+      qaHistory: 'id, userId, timestamp',
+      knowledgePacks: 'id, userId, subject, timestamp',
+      researchQueue: 'id, userId, status, createdAt',
+      conversations: 'id, userId, updatedAt',
+      messages: 'id, conversationId, timestamp',
+      attachments: 'id, conversationId, userId, timestamp',
+      documents: 'id, userId, updatedAt',
+      userMemory: 'id, userId, kind, timestamp',
+      friendMessages: 'id, userId, chatId, createdAt',
+      friendOutbox: 'id, userId, chatId, createdAt',
+      friendChats: 'chat_id, userId',
+      friendProfiles: 'userId',
+      friendDrafts: 'chatId, userId',
+    });
   }
 }
 
@@ -226,6 +281,9 @@ export async function wipeUserData(userId: string): Promise<void> {
       db.userMemory,
       db.friendMessages,
       db.friendOutbox,
+      db.friendChats,
+      db.friendProfiles,
+      db.friendDrafts,
     ],
     async () => {
       await db.conversations.where('userId').equals(userId).delete();
@@ -237,6 +295,9 @@ export async function wipeUserData(userId: string): Promise<void> {
       await db.userMemory.where('userId').equals(userId).delete();
       await db.friendMessages.where('userId').equals(userId).delete();
       await db.friendOutbox.where('userId').equals(userId).delete();
+      await db.friendChats.where('userId').equals(userId).delete();
+      await db.friendProfiles.where('userId').equals(userId).delete();
+      await db.friendDrafts.where('userId').equals(userId).delete();
       // Messages don't have an index on userId, so look through them all.
       await db.messages
         .toCollection()

@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AlertCircle, Clock, Loader2, RotateCw, Send, Trash2, WifiOff } from 'lucide-react';
+import { db } from '../lib/db';
 import type { FriendMessage, FriendOutboxItem } from '../lib/db';
 import { discardFriendMessage, queueFriendMessage, retryFriendMessage, useFriendChat } from '../lib/friendChat';
 
@@ -13,6 +14,16 @@ type Props = {
 };
 
 type Item = { kind: 'saved'; message: FriendMessage } | { kind: 'waiting'; message: FriendOutboxItem };
+
+// Saves (or, if empty, removes) the unsent text for a chat.
+async function saveDraft(userId: string, chatId: string, text: string) {
+  try {
+    if (text.trim() === '') await db.friendDrafts.delete(chatId);
+    else await db.friendDrafts.put({ chatId, userId, text, updatedAt: Date.now() });
+  } catch (err) {
+    console.error('Saving the draft failed:', err);
+  }
+}
 
 function timeOf(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -36,6 +47,50 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
     isGroup
   );
   const [text, setText] = useState('');
+  const textRef = useRef('');
+  const draftLoaded = useRef(false);
+
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
+
+  // Bring back what was typed but not sent (after a reload, or coming back to this chat).
+  useEffect(() => {
+    let cancelled = false;
+    db.friendDrafts.get(chatId).then((draft) => {
+      if (cancelled) return;
+      // Don't overwrite anything typed in the meantime.
+      if (draft && textRef.current === '') setText(draft.text);
+      draftLoaded.current = true;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId]);
+
+  // Save the draft shortly after each change...
+  useEffect(() => {
+    if (!draftLoaded.current) return;
+    const timer = window.setTimeout(() => void saveDraft(userId, chatId, textRef.current), 150);
+    return () => window.clearTimeout(timer);
+  }, [text, userId, chatId]);
+
+  // ...and right away when the page is hidden or reloaded, or when this chat is closed.
+  useEffect(() => {
+    const flush = () => {
+      if (draftLoaded.current) void saveDraft(userId, chatId, textRef.current);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, [userId, chatId]);
 
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -81,9 +136,16 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
     if (!body || readOnly) return;
     setText('');
     stickToBottom.current = true;
-    if (textarea.current) textarea.current.style.height = 'auto';
     await queueFriendMessage(userId, chatId, body);
   }
+
+  // Grow the box with what's typed (including a restored draft), up to a limit.
+  useLayoutEffect(() => {
+    const el = textarea.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [text]);
 
   // On a phone, Enter makes a new line (the Send button sends). On a computer, Enter sends and Shift+Enter makes a line.
   const touchDevice = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
@@ -211,11 +273,6 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
                 ref={textarea}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                onInput={(e) => {
-                  const el = e.currentTarget;
-                  el.style.height = 'auto';
-                  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey && !touchDevice && !e.nativeEvent.isComposing) {
                     e.preventDefault();

@@ -7,10 +7,12 @@ import {
   chatTitle,
   getMyProfile,
   personName,
+  rememberProfile,
   saveProfile,
   searchUsers,
   startDirectChat,
   useMyChats,
+  useStoredProfile,
 } from '../lib/friends';
 import type { ChatSummary, Profile } from '../lib/friends';
 
@@ -24,6 +26,27 @@ const INPUT =
   'w-full rounded-lg border border-slate-200 bg-white/70 px-3 py-2 text-sm backdrop-blur-sm transition-colors focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none disabled:opacity-50';
 const PRIMARY =
   'flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-blue-600 to-blue-700 px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-blue-900/20 transition-all hover:from-blue-500 hover:to-blue-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50';
+
+// Remembers which chat was open, per person, so a reload (or switching tabs) puts you back in it.
+const OPEN_CHAT_KEY_PREFIX = 'smrt-friends-open-chat:';
+
+function readOpenChat(uid: string | null): string | null {
+  if (!uid) return null;
+  try {
+    return localStorage.getItem(OPEN_CHAT_KEY_PREFIX + uid);
+  } catch {
+    return null;
+  }
+}
+
+function writeOpenChat(uid: string, id: string | null) {
+  try {
+    if (id) localStorage.setItem(OPEN_CHAT_KEY_PREFIX + uid, id);
+    else localStorage.removeItem(OPEN_CHAT_KEY_PREFIX + uid);
+  } catch {
+    // storage unavailable: skip
+  }
+}
 
 function Avatar({ name, group = false }: { name: string; group?: boolean }) {
   const letter = name.replace(/^@/, '').charAt(0).toUpperCase() || '?';
@@ -180,8 +203,11 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
   const userId = user && user.is_anonymous === false ? user.id : null;
   const isReal = userId !== null;
 
+  // The username saved on this device (so Friends opens offline), else what the server says.
   // undefined = still loading, null = this account has no username yet.
-  const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
+  const stored = useStoredProfile(userId);
+  const [serverProfile, setServerProfile] = useState<Profile | null | undefined>(undefined);
+  const profile = stored ?? serverProfile;
   const [profileError, setProfileError] = useState('');
   const [editing, setEditing] = useState(false);
 
@@ -189,9 +215,28 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
   const [found, setFound] = useState<{ q: string; list: Profile[] } | null>(null);
   const [searchError, setSearchError] = useState('');
   const [startingId, setStartingId] = useState<string | null>(null);
-  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [selectedChatId, setSelectedChatIdState] = useState<string | null>(() => readOpenChat(userId));
 
-  const { chats, error: chatsError, refresh } = useMyChats(!!profile, isOnline);
+  function setSelectedChatId(id: string | null) {
+    setSelectedChatIdState(id);
+    if (userId) writeOpenChat(userId, id);
+  }
+
+  const { chats, error: chatsError, refresh, loaded } = useMyChats(userId, !!profile, isOnline);
+
+  // If the open chat is gone (you left it, or it was deleted), don't keep trying to show it.
+  // Only once the server has confirmed the list, so a slow load can't close a chat by mistake.
+  useEffect(() => {
+    if (loaded && chats && selectedChatId && !chats.some((c) => c.chat_id === selectedChatId)) {
+      setSelectedChatIdState(null);
+      if (userId) writeOpenChat(userId, null);
+    }
+  }, [loaded, chats, selectedChatId, userId]);
+
+  function handleProfileSaved(saved: Profile) {
+    setServerProfile(saved);
+    if (userId) void rememberProfile(userId, saved);
+  }
 
   // What was typed, cleaned up the way usernames are stored.
   const trimmed = query.trim().replace(/^@/, '').toLowerCase();
@@ -203,7 +248,8 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
     getMyProfile(userId).then((result) => {
       if (cancelled) return;
       if (result.ok) {
-        setProfile(result.data);
+        setServerProfile(result.data);
+        if (result.data) void rememberProfile(userId, result.data);
         setProfileError('');
       } else {
         setProfileError(result.message);
@@ -244,8 +290,9 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
       return;
     }
     setQuery('');
+    // Reload the list first, so the new chat is in it before it's opened.
+    await refresh();
     setSelectedChatId(result.data);
-    void refresh();
   }
 
   // ---------- Guests ----------
@@ -273,7 +320,10 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
     return (
       <CenterCard>
         <div className="flex flex-col items-center gap-3 text-center text-slate-500">
-          {!isOnline ? (
+          {stored === undefined ? (
+            // Still reading what was saved on this device.
+            <Loader2 size={22} className="animate-spin" />
+          ) : !isOnline ? (
             <>
               <WifiOff size={22} />
               <p className="text-sm">Friends needs an internet connection. Reconnect and it will load.</p>
@@ -287,8 +337,12 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
                   setProfileError('');
                   if (!userId) return;
                   getMyProfile(userId).then((result) => {
-                    if (result.ok) setProfile(result.data);
-                    else setProfileError(result.message);
+                    if (result.ok) {
+                      setServerProfile(result.data);
+                      if (result.data) void rememberProfile(userId, result.data);
+                    } else {
+                      setProfileError(result.message);
+                    }
                   });
                 }}
                 className="text-sm font-medium text-blue-600 hover:underline"
@@ -312,7 +366,7 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
         <p className="mb-4 text-sm text-slate-500">
           This is how schoolmates and tutors will find you. You can change it later.
         </p>
-        <ProfileForm initial={null} onSaved={setProfile} />
+        <ProfileForm initial={null} onSaved={handleProfileSaved} />
       </CenterCard>
     );
   }
@@ -332,7 +386,7 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
             <ProfileForm
               initial={profile}
               onSaved={(p) => {
-                setProfile(p);
+                handleProfileSaved(p);
                 setEditing(false);
               }}
               onCancel={() => setEditing(false)}
@@ -441,7 +495,7 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
                 <>
                   <h3 className="mb-1 px-1 text-xs font-semibold tracking-wide text-slate-400 uppercase">Chats</h3>
                   {chatsError && <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{chatsError}</p>}
-                  {chats === null ? (
+                  {chats === undefined ? (
                     !chatsError && isOnline && (
                       <p className="flex items-center gap-2 px-1 text-sm text-slate-400">
                         <Loader2 size={14} className="animate-spin" /> Loading...
@@ -501,6 +555,16 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
                   </p>
                 )}
               </div>
+              {/* On a computer there's no back arrow, so this closes the chat and returns to the list. */}
+              <button
+                type="button"
+                onClick={() => setSelectedChatId(null)}
+                title="Close chat"
+                aria-label="Close chat"
+                className="hidden h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 active:scale-95 md:flex"
+              >
+                <X size={16} />
+              </button>
             </div>
             <FriendChat
               key={selectedChatId}

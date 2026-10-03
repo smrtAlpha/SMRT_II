@@ -14,6 +14,7 @@ import FilesView from './components/FilesView';
 import DataView from './components/DataView';
 import WriteView from './components/WriteView';
 import FriendsView from './components/FriendsView';
+import ErrorBoundary from './components/ErrorBoundary';
 import NotificationToggle from './components/NotificationToggle';
 import ResearchQueueForm from './components/ResearchQueueForm';
 import ResearchQueueList from './components/ResearchQueueList';
@@ -266,7 +267,11 @@ function App() {
             )}
             {view === 'data' && <DataView userId={userId} />}
             {view === 'write' && <WriteView userId={userId} />}
-            {view === 'notes' && <FriendsView user={user} isOnline={isOnline} onOpenAccount={() => setShowAccount(true)} />}
+            {view === 'notes' && (
+              <ErrorBoundary label="Friends">
+                <FriendsView user={user} isOnline={isOnline} onOpenAccount={() => setShowAccount(true)} />
+              </ErrorBoundary>
+            )}
           </div>
         </div>
         <StatusBar userId={userId} isOnline={isOnline} pendingCount={pendingCount} onOpenQueue={() => setShowQueue(true)} />

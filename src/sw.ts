@@ -14,7 +14,14 @@ precacheAndRoute(self.__WB_MANIFEST);
 // Without this, precacheAndRoute alone won't serve the app shell for an actual page load/reload
 // (opening the installed PWA, or refreshing the tab) while offline — it only matches requests for
 // exact precached URLs, not the navigation request itself. This is what was causing the white screen.
-registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
+//
+// Wrapped because in `npm run dev` index.html isn't in the precache list, and createHandlerBoundToURL
+// throws there — which stopped the whole worker from starting. In a real build it is always precached.
+try {
+  registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
+} catch (err) {
+  console.warn('[SW] App-shell route not registered (normal in dev mode):', err);
+}
 
 // The big on-demand chunks (the offline-AI engine ~6 MB, the Word reader, the PDF worker) are
 // deliberately NOT in the precache list — that would make every first visit download all of them.

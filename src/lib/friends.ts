@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { supabase } from './supabase';
+import { db } from './db';
 
 export type Profile = { user_id: string; username: string; display_name: string | null };
 
@@ -86,22 +88,48 @@ export function chatTitle(chat: ChatSummary): string {
   return personName(chat.other_display_name, chat.other_username);
 }
 
-// Keeps the chat list up to date: loads it, then reloads whenever a message arrives or you're
-// added to / removed from a chat, and again when you come back to the tab.
-export function useMyChats(enabled: boolean, isOnline: boolean) {
-  const [chats, setChats] = useState<ChatSummary[] | null>(null);
+// Your own username, saved on this device so Friends can open without the internet.
+export async function rememberProfile(userId: string, profile: Profile): Promise<void> {
+  await db.friendProfiles.put({ userId, username: profile.username, displayName: profile.display_name });
+}
+
+// undefined = still reading, null = nothing saved yet.
+export function useStoredProfile(userId: string | null): Profile | null | undefined {
+  return useLiveQuery(async () => {
+    if (!userId) return null;
+    const row = await db.friendProfiles.get(userId);
+    return row ? { user_id: row.userId, username: row.username, display_name: row.displayName } : null;
+  }, [userId]);
+}
+
+// Keeps the chat list up to date: shows the saved list straight away (even offline), then reloads it
+// from the server, and again whenever a message arrives, you're added to / removed from a chat, or
+// you come back to the tab. `loaded` turns true once the server has confirmed the list this session.
+export function useMyChats(userId: string | null, enabled: boolean, isOnline: boolean) {
+  const rows = useLiveQuery(
+    async () => (userId ? db.friendChats.where('userId').equals(userId).toArray() : []),
+    [userId]
+  );
+  const chats = rows ? [...rows].sort((a, b) => Date.parse(b.last_at) - Date.parse(a.last_at)) : undefined;
+
   const [error, setError] = useState('');
+  const [loaded, setLoaded] = useState(false);
   const timer = useRef<number | undefined>(undefined);
 
   const refresh = useCallback(async () => {
+    if (!userId) return;
     const result = await loadMyChats();
     if (result.ok) {
-      setChats(result.data);
+      await db.transaction('rw', db.friendChats, async () => {
+        await db.friendChats.where('userId').equals(userId).delete();
+        await db.friendChats.bulkPut(result.data.map((c) => ({ ...c, userId })));
+      });
       setError('');
+      setLoaded(true);
     } else {
       setError(result.message);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (!enabled || !isOnline) return;
@@ -131,5 +159,5 @@ export function useMyChats(enabled: boolean, isOnline: boolean) {
     };
   }, [enabled, isOnline, refresh]);
 
-  return { chats, error, refresh };
+  return { chats, error, refresh, loaded };
 }
