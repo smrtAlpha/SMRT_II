@@ -1,5 +1,6 @@
 import { db } from './db';
 import { supabase } from './supabase';
+import { deletePackFromCloud } from './cloudSync';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/summarize-pack`;
 
@@ -56,6 +57,8 @@ export async function syncChatOffline(userId: string, conversationId: string): P
       .first();
     if (existing) {
       await db.knowledgePacks.delete(existing.id);
+      // Also remove the old copy from the cloud, or it would be pulled back down as a duplicate.
+      await deletePackFromCloud(existing.id);
     }
 
     await db.knowledgePacks.add({

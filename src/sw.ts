@@ -1,9 +1,12 @@
 /// <reference lib="webworker" />
-import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
+import { precacheAndRoute, createHandlerBoundToURL, cleanupOutdatedCaches } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { db } from './lib/db';
 
 declare let self: ServiceWorkerGlobalScope;
+
+// Delete precache entries left behind by older deploys, so stale files don't pile up.
+cleanupOutdatedCaches();
 
 precacheAndRoute(self.__WB_MANIFEST);
 
@@ -11,6 +14,16 @@ precacheAndRoute(self.__WB_MANIFEST);
 // (opening the installed PWA, or refreshing the tab) while offline — it only matches requests for
 // exact precached URLs, not the navigation request itself. This is what was causing the white screen.
 registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
+
+// Take over as soon as a new version is installed, instead of waiting for every open tab to close.
+// Without these, a returning visitor keeps getting the OLD app until they fully close the browser.
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event: ExtendableEvent) => {
+  event.waitUntil(self.clients.claim());
+});
 
 self.addEventListener('sync', (event: Event) => {
   const syncEvent = event as Event & { tag: string; waitUntil: (p: Promise<unknown>) => void };

@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { FileText, Trash2, MessageSquare } from 'lucide-react';
 import { db } from '../lib/db';
 import { timeAgo } from '../lib/timeAgo';
+import { deletePackFromCloud } from '../lib/cloudSync';
 
 type Props = {
   userId: string;
@@ -18,6 +19,7 @@ export default function FilesView({ userId, onOpenConversation }: Props) {
   async function deletePack(id: string) {
     if (!window.confirm('Delete this knowledge pack? This does not delete the chat it came from, if any.')) return;
     await db.knowledgePacks.delete(id);
+    deletePackFromCloud(id);
   }
 
   return (

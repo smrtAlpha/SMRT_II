@@ -301,3 +301,14 @@ export async function deleteDocumentFromCloud(id: string): Promise<void> {
     console.error('Deleting document from the cloud failed (will not block the local delete):', err);
   }
 }
+
+// Best-effort: deletes a Knowledge Pack from the cloud. Same reasoning as the helpers above — packs
+// sync last-write-wins by timestamp, which has no idea a local delete happened, so without this a
+// deleted pack would be pulled straight back down on the next sync.
+export async function deletePackFromCloud(id: string): Promise<void> {
+  try {
+    await supabase.from('knowledge_packs').delete().eq('id', id);
+  } catch (err) {
+    console.error('Deleting knowledge pack from the cloud failed (will not block the local delete):', err);
+  }
+}

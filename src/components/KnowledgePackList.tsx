@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Plus, GraduationCap, Trash2 } from 'lucide-react';
 import { db } from '../lib/db';
+import { deletePackFromCloud } from '../lib/cloudSync';
 
 type Props = {
   userId: string;
@@ -16,6 +17,8 @@ export default function KnowledgePackList({ userId, onAdd }: Props) {
   async function handleDelete(id: string, subject: string) {
     if (!window.confirm(`Delete the "${subject}" knowledge pack? This can't be undone.`)) return;
     await db.knowledgePacks.delete(id);
+    // Also remove it from the cloud, or the next sync would pull it straight back down.
+    deletePackFromCloud(id);
   }
 
   return (
