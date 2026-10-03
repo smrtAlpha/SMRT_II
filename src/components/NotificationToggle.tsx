@@ -18,7 +18,7 @@ export default function NotificationToggle() {
 
   if (permission === 'granted') {
     return (
-      <p className="mb-3 flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-800">
+      <p className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200/80 bg-green-50 px-3 py-2 text-xs text-green-800">
         <BellRing size={14} className="shrink-0" />
         Notifications are on. You'll be told when a research task finishes.
       </p>
@@ -27,7 +27,7 @@ export default function NotificationToggle() {
 
   if (permission === 'denied') {
     return (
-      <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+      <p className="mb-3 rounded-xl border border-slate-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-800">
         Notifications are blocked for this site. To get them, allow notifications in your browser's site settings
         (the icon next to the address).
       </p>
@@ -38,7 +38,7 @@ export default function NotificationToggle() {
     <button
       type="button"
       onClick={turnOn}
-      className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+      className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 active:scale-[0.98]"
     >
       <Bell size={16} />
       Notify me when a task finishes

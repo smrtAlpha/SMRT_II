@@ -147,12 +147,18 @@ function AssistantMessage({ content, onRetry }: { content: string; onRetry?: () 
               />
             </div>
           ) : (
-            <div className={MARKDOWN_STYLES}>
+            // Mounts once, the moment the first text replaces the typing dots, so the answer eases in
+            // there — it doesn't replay as more text streams in.
+            <div className={`${MARKDOWN_STYLES} animate-[fadeIn_0.35s_ease-out]`}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
             </div>
           )}
         </div>
-        {body !== '' && <MessageActions content={body} onRetry={onRetry} />}
+        {body !== '' && (
+          <div className="animate-[fadeIn_0.35s_ease-out]">
+            <MessageActions content={body} onRetry={onRetry} />
+          </div>
+        )}
       </div>
     </div>
   );

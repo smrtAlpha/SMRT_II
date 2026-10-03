@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload } from 'lucide-react';
+import { Upload, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { extractTextFromFile } from '../lib/extractText';
 import { db } from '../lib/db';
 import { supabase } from '../lib/supabase';
@@ -68,7 +68,7 @@ export default function KnowledgePackUpload({ userId }: Props) {
   const busy = status === 'extracting' || status === 'summarizing';
 
   return (
-    <div className="mb-2 flex flex-col gap-2 rounded-lg border border-dashed border-slate-300 p-3 text-sm">
+    <div className="flex flex-col gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4 text-sm">
       <div className="flex items-center gap-2 text-slate-500">
         <Upload size={14} />
         <span>Add a knowledge pack</span>
@@ -79,19 +79,39 @@ export default function KnowledgePackUpload({ userId }: Props) {
         value={subject}
         onChange={(e) => setSubject(e.target.value)}
         disabled={busy}
-        className="rounded-md border border-slate-300 px-2 py-1.5 text-sm disabled:opacity-50"
+        className="rounded-lg border border-slate-200 bg-white/70 px-3 py-2 text-sm backdrop-blur-sm transition-colors focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none disabled:opacity-50"
       />
       <input
         type="file"
         accept=".pdf,.docx,.txt,.md"
         onChange={handleFile}
         disabled={busy}
-        className="text-sm disabled:opacity-50"
+        className="text-sm text-slate-500 file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-blue-700 file:transition-colors hover:file:bg-blue-100 disabled:opacity-50"
       />
-      {status === 'extracting' && <p className="text-slate-500">Reading document...</p>}
-      {status === 'summarizing' && <p className="text-slate-500">Condensing into a knowledge pack (can take a moment for large files)...</p>}
-      {status === 'done' && <p className="text-green-700">✅ Knowledge pack saved — available offline.</p>}
-      {status === 'error' && <p className="text-red-600">{errorMsg}</p>}
+      {status === 'extracting' && (
+        <p className="flex items-center gap-2 text-slate-500">
+          <Loader2 size={14} className="shrink-0 animate-spin" />
+          Reading document...
+        </p>
+      )}
+      {status === 'summarizing' && (
+        <p className="flex items-center gap-2 text-slate-500">
+          <Loader2 size={14} className="shrink-0 animate-spin" />
+          Condensing into a knowledge pack (can take a moment for large files)...
+        </p>
+      )}
+      {status === 'done' && (
+        <p className="flex items-center gap-2 text-green-700">
+          <CheckCircle2 size={14} className="shrink-0" />
+          Knowledge pack saved — available offline.
+        </p>
+      )}
+      {(status === 'error' || errorMsg) && status !== 'done' && !busy && (
+        <p className="flex items-start gap-2 text-red-600">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+          {errorMsg}
+        </p>
+      )}
     </div>
   );
 }
