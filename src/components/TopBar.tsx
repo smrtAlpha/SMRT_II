@@ -12,6 +12,9 @@ type Props = {
   isOnline: boolean;
   cloudSync: CloudSync;
   onOpenMenu: () => void;
+  // The phone-only menu button opens the chat list, so it is only shown on the Chat tab.
+  // Other tabs have no sidebar, and Write has its own document list.
+  showMenu?: boolean;
   // The button on the right: "Sign in" for guests, "Projects" once signed in.
   isGuest: boolean;
   onOpenAccount: () => void;
@@ -68,7 +71,7 @@ function OfflineAiBadge({ localModel }: { localModel: LocalModel }) {
   );
 }
 
-export default function TopBar({ localModel, isOnline, cloudSync, onOpenMenu, isGuest, onOpenAccount }: Props) {
+export default function TopBar({ localModel, isOnline, cloudSync, onOpenMenu, showMenu = true, isGuest, onOpenAccount }: Props) {
   const { isDark, toggle } = useTheme();
   const syncDisabled = isGuest || !isOnline || cloudSync.syncing;
 
@@ -97,14 +100,16 @@ export default function TopBar({ localModel, isOnline, cloudSync, onOpenMenu, is
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-200 bg-white/75 px-3 backdrop-blur-md md:h-16 md:px-6">
       <div className="flex min-w-0 items-center gap-2">
-        <button
-          type="button"
-          onClick={onOpenMenu}
-          aria-label="Open menu"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 md:hidden"
-        >
-          <Menu size={20} />
-        </button>
+        {showMenu && (
+          <button
+            type="button"
+            onClick={onOpenMenu}
+            aria-label="Open menu"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100 md:hidden"
+          >
+            <Menu size={20} />
+          </button>
+        )}
         <h2 className="hidden text-xl font-bold text-blue-950 sm:block">SMRT</h2>
         <OfflineAiBadge localModel={localModel} />
       </div>

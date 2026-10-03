@@ -233,6 +233,7 @@ function App() {
           isOnline={isOnline}
           cloudSync={cloudSync}
           onOpenMenu={() => setSidebarOpen(true)}
+          showMenu={view === 'chat'}
           isGuest={isGuest}
           onOpenAccount={() => setShowAccount(true)}
         />
@@ -279,7 +280,7 @@ function App() {
             {view === 'notes' && <ComingSoonView view={view} />}
           </div>
         </div>
-        <StatusBar isOnline={isOnline} pendingCount={pendingCount} onOpenQueue={() => setShowQueue(true)} />
+        <StatusBar userId={userId} isOnline={isOnline} pendingCount={pendingCount} onOpenQueue={() => setShowQueue(true)} />
       </div>
 
       {showAccount && (
