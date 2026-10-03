@@ -1,4 +1,5 @@
 import { db } from './db';
+import type { UserMemory } from './db';
 import { supabase } from './supabase';
 
 export type SyncResult = { ok: true; pulled: number; pushed: number } | { ok: false; message: string };
@@ -31,6 +32,7 @@ type CloudKnowledgePack = {
   timestamp: number;
   source_conversation_id: string | null;
 };
+type CloudMemory = { id: string; user_id: string; kind: string; fact: string; timestamp: number };
 type CloudDocument = { id: string; user_id: string; title: string; content: string; created_at: number; updated_at: number };
 
 // Pulls whatever is newer from the cloud into Dexie, then pushes whatever is newer locally
@@ -263,6 +265,65 @@ export async function syncNow(userId: string): Promise<SyncResult> {
       pushed += docsToPush.length;
     }
 
+    // ---- Memory (what SMRT remembers about you) ----
+    const [localMemory, { data: cloudMemoryRaw, error: memErr }] = await Promise.all([
+      db.userMemory.where('userId').equals(userId).toArray(),
+      supabase.from('user_memory').select('*').eq('user_id', userId),
+    ]);
+    if (memErr) throw memErr;
+    const cloudMemory = (cloudMemoryRaw ?? []) as CloudMemory[];
+
+    const localMemoryById = new Map(localMemory.map((m) => [m.id, m]));
+    const cloudMemoryById = new Map(cloudMemory.map((m) => [m.id, m]));
+
+    const memoryToPull = cloudMemory.filter((m) => {
+      const local = localMemoryById.get(m.id);
+      return !local || m.timestamp > local.timestamp;
+    });
+    if (memoryToPull.length > 0) {
+      await db.userMemory.bulkPut(
+        memoryToPull.map((m) => ({
+          id: m.id,
+          userId: m.user_id,
+          kind: m.kind as UserMemory['kind'],
+          fact: m.fact,
+          timestamp: m.timestamp,
+        }))
+      );
+      pulled += memoryToPull.length;
+    }
+
+    const memoryToPush = localMemory.filter((m) => {
+      const cloud = cloudMemoryById.get(m.id);
+      return !cloud || m.timestamp > cloud.timestamp;
+    });
+    if (memoryToPush.length > 0) {
+      const { error } = await supabase
+        .from('user_memory')
+        .upsert(memoryToPush.map((m) => ({ id: m.id, user_id: m.userId, kind: m.kind, fact: m.fact, timestamp: m.timestamp })));
+      if (error) throw error;
+      pushed += memoryToPush.length;
+    }
+
+    // Two devices can each save a different name (or location, age, job) before they've synced.
+    // Only the newest of each of those kinds should survive, the same rule a single device follows
+    // when it replaces one — otherwise you'd end up with two names.
+    const allMemory = await db.userMemory.where('userId').equals(userId).toArray();
+    const newestOfKind = new Map<string, UserMemory>();
+    for (const m of allMemory) {
+      if (m.kind === 'note') continue;
+      const best = newestOfKind.get(m.kind);
+      if (!best || m.timestamp > best.timestamp) newestOfKind.set(m.kind, m);
+    }
+    const supersededIds = allMemory
+      .filter((m) => m.kind !== 'note' && newestOfKind.get(m.kind)?.id !== m.id)
+      .map((m) => m.id);
+    if (supersededIds.length > 0) {
+      await db.userMemory.bulkDelete(supersededIds);
+      const { error } = await supabase.from('user_memory').delete().in('id', supersededIds);
+      if (error) throw error;
+    }
+
     return { ok: true, pulled, pushed };
   } catch (err) {
     console.error('Cloud sync failed:', err);
@@ -310,5 +371,18 @@ export async function deletePackFromCloud(id: string): Promise<void> {
     await supabase.from('knowledge_packs').delete().eq('id', id);
   } catch (err) {
     console.error('Deleting knowledge pack from the cloud failed (will not block the local delete):', err);
+  }
+}
+
+// Best-effort: deletes remembered facts from the cloud, same reasoning as the helpers above —
+// memory syncs last-write-wins by timestamp, which has no idea a local delete happened. Takes one
+// id or several (a new name replaces the old one, which is a delete of the old row).
+export async function deleteMemoryFromCloud(ids: string | string[]): Promise<void> {
+  const list = Array.isArray(ids) ? ids : [ids];
+  if (list.length === 0) return;
+  try {
+    await supabase.from('user_memory').delete().in('id', list);
+  } catch (err) {
+    console.error('Deleting remembered facts from the cloud failed (will not block the local delete):', err);
   }
 }

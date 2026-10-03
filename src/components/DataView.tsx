@@ -3,6 +3,7 @@ import { MessageSquare, FileText, Paperclip, Sparkles, Brain, Trash2 } from 'luc
 import type { LucideIcon } from 'lucide-react';
 import { db } from '../lib/db';
 import { timeAgo } from '../lib/timeAgo';
+import { deleteMemoryFromCloud } from '../lib/cloudSync';
 
 type Props = { userId: string };
 
@@ -94,7 +95,10 @@ export default function DataView({ userId }: Props) {
               <span className="text-sm text-slate-700">{m.fact}</span>
               <button
                 type="button"
-                onClick={() => db.userMemory.delete(m.id)}
+                onClick={async () => {
+                  await db.userMemory.delete(m.id);
+                  deleteMemoryFromCloud(m.id);
+                }}
                 aria-label="Forget this"
                 className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-200 hover:text-red-600"
               >

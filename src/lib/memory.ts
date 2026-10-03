@@ -1,4 +1,5 @@
 import { db } from './db';
+import { deleteMemoryFromCloud } from './cloudSync';
 
 export type MemoryKind = 'name' | 'location' | 'age' | 'occupation' | 'note';
 
@@ -46,11 +47,17 @@ export async function saveMemoryFact(userId: string, text: string): Promise<stri
   if (!found) return null;
 
   if (found.kind !== 'note') {
-    await db.userMemory
+    const replaced = await db.userMemory
       .where('userId')
       .equals(userId)
       .filter((r) => r.kind === found.kind)
-      .delete();
+      .toArray();
+    if (replaced.length > 0) {
+      const ids = replaced.map((r) => r.id);
+      await db.userMemory.bulkDelete(ids);
+      // Also remove the old copy from the cloud, or it would be pulled back down next to the new one.
+      void deleteMemoryFromCloud(ids);
+    }
   } else {
     const existing = await db.userMemory
       .where('userId')
@@ -61,6 +68,7 @@ export async function saveMemoryFact(userId: string, text: string): Promise<stri
     if (existing.length >= NOTE_LIMIT) {
       const oldest = existing.reduce((a, b) => (a.timestamp < b.timestamp ? a : b));
       await db.userMemory.delete(oldest.id);
+      void deleteMemoryFromCloud(oldest.id);
     }
   }
 
@@ -71,7 +79,16 @@ export async function saveMemoryFact(userId: string, text: string): Promise<stri
 // Formats everything remembered about the user as a short bullet list, for the AI prompt.
 // Empty string when nothing is known yet, so callers can skip adding it entirely.
 export async function buildMemoryContext(userId: string): Promise<string> {
-  const facts = await db.userMemory.where('userId').equals(userId).toArray();
+  const all = await db.userMemory.where('userId').equals(userId).toArray();
+  // If two devices briefly disagree (say, two different names) before they've synced, trust the newest
+  // one of each single-answer kind rather than telling the AI both.
+  const newestOfKind = new Map<string, (typeof all)[number]>();
+  for (const f of all) {
+    if (f.kind === 'note') continue;
+    const best = newestOfKind.get(f.kind);
+    if (!best || f.timestamp > best.timestamp) newestOfKind.set(f.kind, f);
+  }
+  const facts = all.filter((f) => f.kind === 'note' || newestOfKind.get(f.kind)?.id === f.id);
   if (facts.length === 0) return '';
   return facts.map((f) => `- ${f.fact}`).join('\n');
 }
