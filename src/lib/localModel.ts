@@ -21,6 +21,12 @@ export async function loadLocalModel(
     .then((e) => {
       engine = e;
       return e;
+    })
+    .catch((err) => {
+      // Forget the failed attempt, otherwise every later tap would just get this same failure back
+      // until the page is reloaded.
+      loadingPromise = null;
+      throw err;
     });
 
   return loadingPromise;
@@ -28,13 +34,18 @@ export async function loadLocalModel(
 
 export async function generateLocalReply(
   prompt: string,
-  history: { role: 'user' | 'assistant'; content: string }[] = []
+  history: { role: 'user' | 'assistant'; content: string }[] = [],
+  // Background context (e.g. remembered facts about the user) as a real system message, rather
+  // than text stitched into the question — this small on-device model follows a plain question
+  // much more reliably than a multi-section prompt with instructions embedded in it.
+  systemContext?: string
 ): Promise<string> {
   if (!engine) throw new Error('Local model not loaded yet');
-  const response = await engine.chat.completions.create({
-    // Earlier messages first, then the new question.
-    messages: [...history, { role: 'user', content: prompt }],
-  });
+  const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [];
+  if (systemContext) messages.push({ role: 'system', content: systemContext });
+  messages.push(...history, { role: 'user', content: prompt });
+
+  const response = await engine.chat.completions.create({ messages });
   return response.choices[0]?.message?.content ?? '';
 }
 

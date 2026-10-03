@@ -64,18 +64,31 @@ export default function SettingsView({ user, localModel, onSignedOut }: Props) {
           </p>
         ) : localModel.isDownloading ? (
           <p className="text-sm text-slate-500">{localModel.progressText || 'Downloading…'}</p>
+        ) : localModel.isRestoring ? (
+          <p className="text-sm text-slate-500">Loading the offline AI from this device…</p>
         ) : (
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm('Download the offline AI (about 880 MB)? Best done on Wi-Fi.')) {
-                localModel.download();
-              }
-            }}
-            className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Download offline AI
-          </button>
+          <div className="flex flex-col gap-2">
+            {localModel.restoreFailed && (
+              <p className="text-sm text-slate-500">
+                The offline AI couldn&apos;t be loaded from this device&apos;s saved copy. Tap below to try again — if it
+                isn&apos;t saved any more, it will download again.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                const message = localModel.restoreFailed
+                  ? 'Load the offline AI? If it is still saved on this device it loads quickly; if not, it downloads again (about 880 MB, best on Wi-Fi).'
+                  : 'Download the offline AI (about 880 MB)? Best done on Wi-Fi.';
+                if (window.confirm(message)) {
+                  localModel.download();
+                }
+              }}
+              className="self-start rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              {localModel.restoreFailed ? 'Reload offline AI' : 'Download offline AI'}
+            </button>
+          </div>
         )}
       </section>
     </div>

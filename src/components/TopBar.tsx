@@ -36,8 +36,22 @@ function OfflineAiBadge({ localModel }: { localModel: LocalModel }) {
     );
   }
 
+  // This device already has the offline AI and it's being switched back on after a reload.
+  // Showing the download button here made it look like it had to be downloaded again.
+  if (localModel.isRestoring) {
+    return (
+      <span className="flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
+        <Loader2 size={12} className="animate-spin" />
+        Loading Offline AI…
+      </span>
+    );
+  }
+
   function handleGet() {
-    if (window.confirm('Download the offline AI (about 880 MB)? Best done on Wi-Fi.')) {
+    const message = localModel.restoreFailed
+      ? 'Load the offline AI? If it is still saved on this device it loads quickly; if not, it downloads again (about 880 MB, best on Wi-Fi).'
+      : 'Download the offline AI (about 880 MB)? Best done on Wi-Fi.';
+    if (window.confirm(message)) {
       localModel.download();
     }
   }
@@ -49,7 +63,7 @@ function OfflineAiBadge({ localModel }: { localModel: LocalModel }) {
       className="flex items-center gap-1.5 rounded-full border border-blue-200 bg-white px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-50"
     >
       <Download size={12} />
-      Get Offline AI
+      {localModel.restoreFailed ? 'Reload Offline AI' : 'Get Offline AI'}
     </button>
   );
 }
