@@ -94,6 +94,14 @@ Deno.serve(async (req) => {
       return json({ error: 'Could not delete the account. Please try again.' }, 500);
     }
 
+    // Best effort: remove chats that now have nobody left in them. (Messages this person sent in
+    // chats that still have other people stay, shown as coming from a deleted user.)
+    await fetch(`${supabaseUrl}/rest/v1/rpc/cleanup_empty_chats`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: '{}',
+    }).catch(() => {});
+
     return json({ ok: true }, 200);
   } catch (err) {
     console.error('delete-account crashed:', err);

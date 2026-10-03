@@ -13,6 +13,7 @@ import SettingsView from './components/SettingsView';
 import FilesView from './components/FilesView';
 import DataView from './components/DataView';
 import WriteView from './components/WriteView';
+import FriendsView from './components/FriendsView';
 import NotificationToggle from './components/NotificationToggle';
 import ResearchQueueForm from './components/ResearchQueueForm';
 import ResearchQueueList from './components/ResearchQueueList';
@@ -27,21 +28,6 @@ import { useLocalModel } from './lib/useLocalModel';
 import { db } from './lib/db';
 import { WifiOff } from 'lucide-react';
 import './App.css';
-
-// Not built yet — Friends needs sync + profiles + live messaging + blocking/reporting first.
-const COMING_SOON: Partial<Record<View, string>> = {
-  notes: 'Connecting with friends — a chat with schoolmates, tutors and lecturers',
-};
-
-function ComingSoonView({ view }: { view: View }) {
-  const label = view === 'notes' ? 'Friends' : view;
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center text-slate-400">
-      <p className="font-medium capitalize text-slate-500">{label}</p>
-      <p className="text-sm">{COMING_SOON[view]} — coming soon.</p>
-    </div>
-  );
-}
 
 // Remembers the last-open chat per user, so a page refresh returns to where you were instead of
 // showing a new chat. Scoped per user id so a guest's leftover id is never applied to an account.
@@ -277,7 +263,7 @@ function App() {
             )}
             {view === 'data' && <DataView userId={userId} />}
             {view === 'write' && <WriteView userId={userId} />}
-            {view === 'notes' && <ComingSoonView view={view} />}
+            {view === 'notes' && <FriendsView user={user} isOnline={isOnline} onOpenAccount={() => setShowAccount(true)} />}
           </div>
         </div>
         <StatusBar userId={userId} isOnline={isOnline} pendingCount={pendingCount} onOpenQueue={() => setShowQueue(true)} />
