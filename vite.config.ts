@@ -12,8 +12,13 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       registerType: 'autoUpdate',
+      // Saves the tab icon for offline use too (it was the second console error).
+      includeAssets: ['favicon.svg'],
       injectManifest: {
-        globIgnores: ['**/node_modules/**/*', '**/webllm-*.js', '**/pdfjs-*.js', '**/mammoth-*.js'],
+        // webllm (~6 MB) and mammoth are too big to precache for every visitor — sw.ts saves them the
+        // first time they're loaded instead. pdfjs is NOT ignored any more: the app's main code imports
+        // it at startup, so without it saved, the whole app fails to start offline (blank white page).
+        globIgnores: ['**/node_modules/**/*', '**/webllm-*.js', '**/mammoth-*.js'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
       devOptions: {

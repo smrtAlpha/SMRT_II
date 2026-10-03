@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute, createHandlerBoundToURL, cleanupOutdatedCaches } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
+import { CacheFirst } from 'workbox-strategies';
 import { db } from './lib/db';
 
 declare let self: ServiceWorkerGlobalScope;
@@ -14,6 +15,16 @@ precacheAndRoute(self.__WB_MANIFEST);
 // (opening the installed PWA, or refreshing the tab) while offline — it only matches requests for
 // exact precached URLs, not the navigation request itself. This is what was causing the white screen.
 registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
+
+// The big on-demand chunks (the offline-AI engine ~6 MB, the Word reader, the PDF worker) are
+// deliberately NOT in the precache list — that would make every first visit download all of them.
+// Instead, the first time one is fetched while online it is saved here, and every time after that
+// (including with no connection) it is served from the saved copy. Registered after precacheAndRoute,
+// so files that ARE precached are still handled by the precache first.
+registerRoute(
+  ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/assets/'),
+  new CacheFirst({ cacheName: 'lazy-chunks' })
+);
 
 // Take over as soon as a new version is installed, instead of waiting for every open tab to close.
 // Without these, a returning visitor keeps getting the OLD app until they fully close the browser.
