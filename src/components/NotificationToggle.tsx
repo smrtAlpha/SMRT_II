@@ -1,8 +1,17 @@
 import { useState } from 'react';
 import { Bell, BellRing } from 'lucide-react';
 
+type Props = {
+  // Wording, so the same switch can serve research tasks and Friends messages.
+  enableText?: string;
+  enabledText?: string;
+};
+
 // Asks permission to show notifications. It has to be triggered by a tap, so it lives in a button.
-export default function NotificationToggle() {
+export default function NotificationToggle({
+  enableText = 'Notify me when a task finishes',
+  enabledText = "Notifications are on. You'll be told when a research task finishes.",
+}: Props) {
   const supported = typeof Notification !== 'undefined';
   const [permission, setPermission] = useState<NotificationPermission>(
     supported ? Notification.permission : 'denied'
@@ -20,7 +29,7 @@ export default function NotificationToggle() {
     return (
       <p className="mb-3 flex items-center gap-2 rounded-xl border border-slate-200/80 bg-green-50 px-3 py-2 text-xs text-green-800">
         <BellRing size={14} className="shrink-0" />
-        Notifications are on. You'll be told when a research task finishes.
+        {enabledText}
       </p>
     );
   }
@@ -41,7 +50,7 @@ export default function NotificationToggle() {
       className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 active:scale-[0.98]"
     >
       <Bell size={16} />
-      Notify me when a task finishes
+      {enableText}
     </button>
   );
 }

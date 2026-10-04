@@ -54,8 +54,25 @@ self.addEventListener('sync', (event: Event) => {
 // Tapping a notification brings the app to the front and opens the research queue.
 self.addEventListener('notificationclick', (event: NotificationEvent) => {
   event.notification.close();
-  event.waitUntil(openResearchQueue());
+  const data = event.notification.data as { kind?: string; chatId?: string } | undefined;
+  if (data?.kind === 'friend-message' && data.chatId) {
+    event.waitUntil(openFriendChat(data.chatId));
+  } else {
+    event.waitUntil(openResearchQueue());
+  }
 });
+
+// Tapping a "new message" notification brings the app to the front and opens that chat.
+async function openFriendChat(chatId: string) {
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const existing = windows[0];
+  if (existing) {
+    await existing.focus();
+    existing.postMessage({ type: 'open-chat', chatId });
+  } else {
+    await self.clients.openWindow(`/?chat=${encodeURIComponent(chatId)}`);
+  }
+}
 
 async function openResearchQueue() {
   const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });

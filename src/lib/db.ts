@@ -88,6 +88,8 @@ export interface FriendMessage {
   // The writer's name as last seen, so a group chat can still show who said what while offline.
   senderName?: string;
   body: string;
+  // The earlier message this one answers (empty if it isn't a reply).
+  replyToId?: string | null;
   createdAt: number;
 }
 
@@ -99,9 +101,18 @@ export interface FriendOutboxItem {
   chatId: string;
   userId: string;
   body: string;
+  replyToId?: string | null;
   createdAt: number;
   // Set if the server refused it (blocked, sending too fast...). It then waits for Retry or Delete.
   error?: string;
+}
+
+// Someone you've blocked (saved so their messages stay hidden in groups even offline).
+export interface FriendBlockRow {
+  userId: string;
+  blockedId: string;
+  name: string;
+  createdAt: number;
 }
 
 // Text typed into a Friends chat but not sent yet, so a reload doesn't lose it.
@@ -138,6 +149,7 @@ class SmrtDatabase extends Dexie {
   friendChats!: Table<FriendChatRow, string>;
   friendProfiles!: Table<FriendProfileRow, string>;
   friendDrafts!: Table<FriendDraft, string>;
+  friendBlocks!: Table<FriendBlockRow, [string, string]>;
 
   constructor() {
     super('smrt-db');
@@ -242,6 +254,23 @@ class SmrtDatabase extends Dexie {
       friendProfiles: 'userId',
       friendDrafts: 'chatId, userId',
     });
+    // v12: Friends — people you've blocked.
+    this.version(12).stores({
+      qaHistory: 'id, userId, timestamp',
+      knowledgePacks: 'id, userId, subject, timestamp',
+      researchQueue: 'id, userId, status, createdAt',
+      conversations: 'id, userId, updatedAt',
+      messages: 'id, conversationId, timestamp',
+      attachments: 'id, conversationId, userId, timestamp',
+      documents: 'id, userId, updatedAt',
+      userMemory: 'id, userId, kind, timestamp',
+      friendMessages: 'id, userId, chatId, createdAt',
+      friendOutbox: 'id, userId, chatId, createdAt',
+      friendChats: 'chat_id, userId',
+      friendProfiles: 'userId',
+      friendDrafts: 'chatId, userId',
+      friendBlocks: '[userId+blockedId], userId',
+    });
   }
 }
 
@@ -284,6 +313,7 @@ export async function wipeUserData(userId: string): Promise<void> {
       db.friendChats,
       db.friendProfiles,
       db.friendDrafts,
+      db.friendBlocks,
     ],
     async () => {
       await db.conversations.where('userId').equals(userId).delete();
@@ -298,6 +328,7 @@ export async function wipeUserData(userId: string): Promise<void> {
       await db.friendChats.where('userId').equals(userId).delete();
       await db.friendProfiles.where('userId').equals(userId).delete();
       await db.friendDrafts.where('userId').equals(userId).delete();
+      await db.friendBlocks.where('userId').equals(userId).delete();
       // Messages don't have an index on userId, so look through them all.
       await db.messages
         .toCollection()

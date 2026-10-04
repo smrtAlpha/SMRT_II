@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AlertCircle, Clock, Loader2, RotateCw, Send, Trash2, WifiOff } from 'lucide-react';
+import { AlertCircle, Clock, Loader2, Reply, RotateCw, Send, Trash2, WifiOff, X } from 'lucide-react';
 import { db } from '../lib/db';
 import type { FriendMessage, FriendOutboxItem } from '../lib/db';
 import { discardFriendMessage, queueFriendMessage, retryFriendMessage, useFriendChat } from '../lib/friendChat';
@@ -9,9 +9,15 @@ type Props = {
   userId: string;
   isOnline: boolean;
   isGroup: boolean;
-  // A one-to-one chat whose other person has left or deleted their account: nothing can be sent.
-  readOnly: boolean;
+  // What to call the other person in a one-to-one chat (shown when quoting their messages).
+  partnerName: string;
+  // People you've blocked: their messages are hidden in groups.
+  blockedIds: Set<string>;
+  // When set, the message box is replaced by this note (the other person left, or you blocked them).
+  lock: ChatLock | null;
 };
+
+export type ChatLock = { text: string; actionLabel?: string; onAction?: () => void };
 
 type Item = { kind: 'saved'; message: FriendMessage } | { kind: 'waiting'; message: FriendOutboxItem };
 
@@ -39,7 +45,7 @@ function dayLabel(ms: number): string {
   return day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly }: Props) {
+export default function FriendChat({ chatId, userId, isOnline, isGroup, partnerName, blockedIds, lock }: Props) {
   const { messages, outbox, people, hasMore, loadingEarlier, loadEarlier, error } = useFriendChat(
     chatId,
     userId,
@@ -47,6 +53,8 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
     isGroup
   );
   const [text, setText] = useState('');
+  // The message being answered, if any.
+  const [replyingTo, setReplyingTo] = useState<{ id: string; name: string; body: string } | null>(null);
   const textRef = useRef('');
   const draftLoaded = useRef(false);
 
@@ -99,10 +107,44 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
 
   // A message the server already has shouldn't also show as "waiting" (it can appear in both for a moment).
   const savedIds = new Set((messages ?? []).map((m) => m.id));
+  const visibleMessages = (messages ?? []).filter(
+    (m) => !(isGroup && m.senderId !== null && blockedIds.has(m.senderId))
+  );
   const items: Item[] = [
-    ...(messages ?? []).map((message): Item => ({ kind: 'saved', message })),
+    ...visibleMessages.map((message): Item => ({ kind: 'saved', message })),
     ...(outbox ?? []).filter((o) => !savedIds.has(o.id)).map((message): Item => ({ kind: 'waiting', message })),
   ];
+
+  // Every message we have, so a reply can show the message it answers.
+  const byId = new Map<string, FriendMessage | FriendOutboxItem>();
+  for (const m of messages ?? []) byId.set(m.id, m);
+  for (const o of outbox ?? []) byId.set(o.id, o);
+
+  // Who to call the writer of a message when quoting it.
+  function writerName(writerId: string | null | undefined, savedName?: string): string {
+    if (writerId === undefined || writerId === userId) return 'You';
+    if (writerId === null) return 'Deleted user';
+    if (!isGroup) return partnerName;
+    return people[writerId] ?? savedName ?? 'Member';
+  }
+
+  function startReply(message: FriendMessage) {
+    setReplyingTo({ id: message.id, name: writerName(message.senderId, message.senderName), body: message.body });
+    textarea.current?.focus();
+  }
+
+  // Scrolls to the quoted message and flashes it.
+  function jumpTo(messageId: string) {
+    const el = document.getElementById(`fm-${messageId}`);
+    if (!el) return;
+    stickToBottom.current = false;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.transition = 'background-color 0.4s';
+    el.style.backgroundColor = 'rgba(59, 130, 246, 0.18)';
+    window.setTimeout(() => {
+      el.style.backgroundColor = '';
+    }, 1200);
+  }
 
   const count = items.length;
   const firstId = items.length > 0 ? items[0].message.id : null;
@@ -133,10 +175,12 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
 
   async function handleSend() {
     const body = text.trim();
-    if (!body || readOnly) return;
+    if (!body || lock) return;
+    const replyToId = replyingTo?.id ?? null;
     setText('');
+    setReplyingTo(null);
     stickToBottom.current = true;
-    await queueFriendMessage(userId, chatId, body);
+    await queueFriendMessage(userId, chatId, body, replyToId);
   }
 
   // Grow the box with what's typed (including a restored draft), up to a limit.
@@ -193,15 +237,32 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
                   : (people[item.message.senderId] ?? item.message.senderName ?? 'Member');
             }
 
+            const replyId = m.replyToId ?? null;
+            const target = replyId ? byId.get(replyId) : undefined;
+
+            const replyButton =
+              item.kind === 'saved' ? (
+                <button
+                  type="button"
+                  onClick={() => startReply(item.message)}
+                  aria-label="Reply to this message"
+                  title="Reply"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-600 focus-visible:opacity-100 [@media(pointer:coarse)]:opacity-60"
+                >
+                  <Reply size={14} />
+                </button>
+              ) : null;
+
             return (
-              <div key={m.id}>
+              <div key={m.id} id={`fm-${m.id}`} className="rounded-lg">
                 {newDay && (
                   <p className="my-2 text-center text-[11px] font-medium tracking-wide text-slate-400 uppercase">
                     {dayLabel(m.createdAt)}
                   </p>
                 )}
                 {showName && <p className="mt-1 mb-0.5 px-1 text-xs font-medium text-slate-500">{name}</p>}
-                <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                <div className={`group flex items-center gap-1 ${mine ? 'justify-end' : 'justify-start'}`}>
+                  {mine && replyButton}
                   <div
                     className={`max-w-[82%] rounded-2xl px-3 py-1.5 text-sm break-words whitespace-pre-wrap ${
                       mine
@@ -209,6 +270,22 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
                         : 'rounded-bl-md border border-slate-200/80 bg-white/80 text-slate-800'
                     } ${item.kind === 'waiting' ? 'opacity-70' : ''}`}
                   >
+                    {replyId && (
+                      <button
+                        type="button"
+                        onClick={() => target && jumpTo(replyId)}
+                        className={`mb-1 block w-full rounded-lg border-l-2 px-2 py-1 text-left text-xs whitespace-normal ${
+                          mine
+                            ? 'border-blue-200 bg-white/15 text-blue-50'
+                            : 'border-blue-400 bg-slate-100/80 text-slate-600'
+                        }`}
+                      >
+                        <span className="block truncate font-medium">
+                          {target ? ('senderId' in target ? writerName(target.senderId, target.senderName) : 'You') : 'Earlier message'}
+                        </span>
+                        {target && <span className="line-clamp-2 break-words">{target.body}</span>}
+                      </button>
+                    )}
                     {m.body}
                     {item.kind === 'saved' && (
                       <span className={`ml-2 inline-block text-[10px] ${mine ? 'text-blue-100' : 'text-slate-400'}`}>
@@ -216,6 +293,7 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
                       </span>
                     )}
                   </div>
+                  {!mine && replyButton}
                 </div>
 
                 {item.kind === 'waiting' && (
@@ -256,10 +334,19 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
       </div>
 
       <div className="shrink-0 border-t border-slate-200/80 p-2.5">
-        {readOnly ? (
-          <p className="px-2 py-1.5 text-center text-xs text-slate-400">
-            This person has left or deleted their account, so you can&apos;t send messages here.
-          </p>
+        {lock ? (
+          <div className="flex flex-col items-center gap-2 px-2 py-1.5 text-center">
+            <p className="text-xs text-slate-400">{lock.text}</p>
+            {lock.onAction && (
+              <button
+                type="button"
+                onClick={lock.onAction}
+                className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
+              >
+                {lock.actionLabel}
+              </button>
+            )}
+          </div>
         ) : (
           <>
             {!isOnline && (
@@ -268,12 +355,32 @@ export default function FriendChat({ chatId, userId, isOnline, isGroup, readOnly
                 You&apos;re offline. Messages will send when you reconnect.
               </p>
             )}
+            {replyingTo && (
+              <div className="mb-2 flex items-start gap-2 rounded-lg border-l-2 border-blue-400 bg-slate-100/80 px-2.5 py-1.5 text-xs">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-slate-600">Replying to {replyingTo.name}</p>
+                  <p className="line-clamp-2 break-words text-slate-500">{replyingTo.body}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplyingTo(null)}
+                  aria-label="Cancel reply"
+                  className="shrink-0 rounded-md p-0.5 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
             <div className="flex items-end gap-2">
               <textarea
                 ref={textarea}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.key === 'Escape' && replyingTo) {
+                    setReplyingTo(null);
+                    return;
+                  }
                   if (e.key === 'Enter' && !e.shiftKey && !touchDevice && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     void handleSend();

@@ -11,7 +11,17 @@ type Props = {
   email: string | null;
   isGuest: boolean;
   onOpenAccount: () => void;
+  // Unread Friends messages, shown as a small red number on the Friends tab.
+  friendsUnread?: number;
 };
+
+function Badge({ count }: { count: number }) {
+  return (
+    <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-semibold text-white">
+      {count > 9 ? '9+' : count}
+    </span>
+  );
+}
 
 type RailItem = { view: View; label: string; icon: LucideIcon };
 
@@ -26,7 +36,7 @@ const ITEMS: RailItem[] = [
   { view: 'settings', label: 'Settings', icon: Settings },
 ];
 
-export default function IconRail({ view, onSelectView, email, isGuest, onOpenAccount }: Props) {
+export default function IconRail({ view, onSelectView, email, isGuest, onOpenAccount, friendsUnread = 0 }: Props) {
   return (
     <>
       {/* Tablet and up: vertical rail on the left */}
@@ -41,11 +51,12 @@ export default function IconRail({ view, onSelectView, email, isGuest, onOpenAcc
             title={label}
             aria-label={label}
             aria-current={view === itemView ? 'page' : undefined}
-            className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+            className={`relative flex h-10 w-10 items-center justify-center rounded-xl ${
               view === itemView ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'
             }`}
           >
             <Icon size={18} />
+            {itemView === 'notes' && friendsUnread > 0 && <Badge count={friendsUnread} />}
           </button>
         ))}
 
@@ -79,7 +90,10 @@ export default function IconRail({ view, onSelectView, email, isGuest, onOpenAcc
               view === itemView ? 'text-blue-600' : 'text-slate-500'
             }`}
           >
-            <Icon size={19} />
+            <span className="relative">
+              <Icon size={19} />
+              {itemView === 'notes' && friendsUnread > 0 && <Badge count={friendsUnread} />}
+            </span>
             <span className="truncate">{label}</span>
           </button>
         ))}

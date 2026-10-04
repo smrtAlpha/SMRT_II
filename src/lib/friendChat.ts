@@ -12,11 +12,12 @@ type ServerMessage = {
   chat_id: string;
   sender_id: string | null;
   body: string;
+  reply_to: string | null;
   created_at: string;
 };
 
 const PAGE = 50;
-const MESSAGE_COLUMNS = 'id, chat_id, sender_id, body, created_at';
+const MESSAGE_COLUMNS = 'id, chat_id, sender_id, body, reply_to, created_at';
 
 function toLocal(row: ServerMessage, viewerId: string, people?: Record<string, string>): FriendMessage {
   const local: FriendMessage = {
@@ -25,6 +26,7 @@ function toLocal(row: ServerMessage, viewerId: string, people?: Record<string, s
     userId: viewerId,
     senderId: row.sender_id,
     body: row.body,
+    replyToId: row.reply_to ?? null,
     createdAt: Date.parse(row.created_at),
   };
   const name = row.sender_id ? people?.[row.sender_id] : undefined;
@@ -124,7 +126,12 @@ export function flushFriendOutbox(userId: string): Promise<void> {
       for (const item of items) {
         if (item.error) continue; // waiting for the person to retry or delete it
         const result = await callServer<ServerMessage>(() =>
-          supabase.rpc('send_message', { p_id: item.id, p_chat: item.chatId, p_body: item.body })
+          supabase.rpc('send_message', {
+            p_id: item.id,
+            p_chat: item.chatId,
+            p_body: item.body,
+            p_reply_to: item.replyToId ?? null,
+          })
         );
         if (result.ok) {
           await db.friendMessages.put(toLocal(result.data, userId));
@@ -148,10 +155,22 @@ export function flushFriendOutbox(userId: string): Promise<void> {
   return flushing;
 }
 
-export async function queueFriendMessage(userId: string, chatId: string, body: string): Promise<void> {
+export async function queueFriendMessage(
+  userId: string,
+  chatId: string,
+  body: string,
+  replyToId: string | null = null
+): Promise<void> {
   const text = body.trim().slice(0, 4000);
   if (!text) return;
-  await db.friendOutbox.add({ id: crypto.randomUUID(), chatId, userId, body: text, createdAt: Date.now() });
+  await db.friendOutbox.add({
+    id: crypto.randomUUID(),
+    chatId,
+    userId,
+    body: text,
+    replyToId,
+    createdAt: Date.now(),
+  });
   void flushFriendOutbox(userId);
 }
 

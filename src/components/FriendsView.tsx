@@ -1,18 +1,47 @@
 import { useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
-import { ArrowLeft, Loader2, MessageCircle, Pencil, Search, Users, WifiOff, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  Ban,
+  Info,
+  Link2,
+  Loader2,
+  MessageCircle,
+  Pencil,
+  Search,
+  UserPlus,
+  Users,
+  WifiOff,
+  X,
+} from 'lucide-react';
 import { timeAgo } from '../lib/timeAgo';
 import FriendChat from './FriendChat';
+import type { ChatLock } from './FriendChat';
+import Modal from './Modal';
+import NewGroupModal from './NewGroupModal';
+import ChatInfoModal from './ChatInfoModal';
+import BlockedModal from './BlockedModal';
+import InviteLinkBox from './InviteLinkBox';
+import NotificationToggle from './NotificationToggle';
+import { Avatar, INPUT, PRIMARY } from './friendsUi';
 import {
   chatTitle,
+  clearPendingInvite,
+  createInvite,
   getMyProfile,
   personName,
+  readOpenChat,
+  readPendingInvite,
+  redeemInvite,
   rememberProfile,
   saveProfile,
   searchUsers,
   startDirectChat,
+  unblockPerson,
+  useBlocks,
   useMyChats,
   useStoredProfile,
+  writeOpenChat,
 } from '../lib/friends';
 import type { ChatSummary, Profile } from '../lib/friends';
 
@@ -21,41 +50,6 @@ type Props = {
   isOnline: boolean;
   onOpenAccount: () => void;
 };
-
-const INPUT =
-  'w-full rounded-lg border border-slate-200 bg-white/70 px-3 py-2 text-sm backdrop-blur-sm transition-colors focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 focus:outline-none disabled:opacity-50';
-const PRIMARY =
-  'flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-blue-600 to-blue-700 px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-blue-900/20 transition-all hover:from-blue-500 hover:to-blue-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50';
-
-// Remembers which chat was open, per person, so a reload (or switching tabs) puts you back in it.
-const OPEN_CHAT_KEY_PREFIX = 'smrt-friends-open-chat:';
-
-function readOpenChat(uid: string | null): string | null {
-  if (!uid) return null;
-  try {
-    return localStorage.getItem(OPEN_CHAT_KEY_PREFIX + uid);
-  } catch {
-    return null;
-  }
-}
-
-function writeOpenChat(uid: string, id: string | null) {
-  try {
-    if (id) localStorage.setItem(OPEN_CHAT_KEY_PREFIX + uid, id);
-    else localStorage.removeItem(OPEN_CHAT_KEY_PREFIX + uid);
-  } catch {
-    // storage unavailable: skip
-  }
-}
-
-function Avatar({ name, group = false }: { name: string; group?: boolean }) {
-  const letter = name.replace(/^@/, '').charAt(0).toUpperCase() || '?';
-  return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-semibold text-blue-600">
-      {group ? <Users size={16} /> : letter}
-    </span>
-  );
-}
 
 function ChatRow({
   chat,
@@ -223,6 +217,38 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
   }
 
   const { chats, error: chatsError, refresh, loaded } = useMyChats(userId, !!profile, isOnline);
+  const { blocked, blockedIds, refresh: refreshBlocks } = useBlocks(userId, isOnline);
+
+  const [modal, setModal] = useState<'group' | 'myLink' | 'info' | 'blocked' | null>(null);
+  const [inviteNote, setInviteNote] = useState('');
+
+  // Tapping a notification (or a link) can ask for a particular chat to be opened.
+  useEffect(() => {
+    function handleOpen(e: Event) {
+      const chatId = (e as CustomEvent<string>).detail;
+      if (chatId) setSelectedChatIdState(chatId);
+    }
+    window.addEventListener('smrt-open-chat', handleOpen);
+    return () => window.removeEventListener('smrt-open-chat', handleOpen);
+  }, []);
+
+  // An invite link that was opened before you could use it (signed out, or no username yet) is used now.
+  useEffect(() => {
+    if (!profile || !isOnline) return;
+    const code = readPendingInvite();
+    if (!code) return;
+    clearPendingInvite();
+    redeemInvite(code).then(async (result) => {
+      if (!result.ok) {
+        setInviteNote(result.message);
+        return;
+      }
+      setInviteNote('');
+      await refresh();
+      setSelectedChatId(result.data.chat_id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, isOnline]);
 
   // If the open chat is gone (you left it, or it was deleted), don't keep trying to show it.
   // Only once the server has confirmed the list, so a slow load can't close a chat by mistake.
@@ -305,7 +331,9 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
           </span>
           <h3 className="text-base font-semibold text-slate-900">Friends needs an account</h3>
           <p className="text-sm text-slate-500">
-            Create a free account to find schoolmates by username and chat with them one-to-one or in groups.
+            {readPendingInvite()
+              ? "You've been invited to a chat on SMRT. Create a free account (or sign in) to join it."
+              : 'Create a free account to find schoolmates by username and chat with them one-to-one or in groups.'}
           </p>
           <button type="button" onClick={onOpenAccount} className={`${PRIMARY} w-full`}>
             Sign in or create account
@@ -376,6 +404,25 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
   const selectedChat = chats?.find((c) => c.chat_id === selectedChatId) ?? null;
   const results = found?.q === trimmed ? found.list : null;
 
+  // Why the message box might be replaced by a note.
+  let chatLock: ChatLock | null = null;
+  if (selectedChat && selectedChat.kind === 'direct') {
+    if (!selectedChat.other_user_id) {
+      chatLock = {
+        text: "This person has left or deleted their account, so you can't send messages here.",
+      };
+    } else if (blockedIds.has(selectedChat.other_user_id)) {
+      const otherId = selectedChat.other_user_id;
+      chatLock = {
+        text: 'You blocked this person. Unblock them to send messages.',
+        actionLabel: 'Unblock',
+        onAction: () => {
+          void unblockPerson(profile.user_id, otherId).then(() => refreshBlocks());
+        },
+      };
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 gap-4">
       {/* ---------- Left: you, search, chat list (hidden on phones while a chat is open) ---------- */}
@@ -391,6 +438,14 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
               }}
               onCancel={() => setEditing(false)}
             />
+            <button
+              type="button"
+              onClick={() => setModal('blocked')}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            >
+              <Ban size={14} />
+              Blocked people{blocked.length > 0 ? ` (${blocked.length})` : ''}
+            </button>
           </div>
         ) : (
           <>
@@ -435,6 +490,39 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
                 </button>
               )}
             </div>
+
+            <div className="mb-3 flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => setModal('group')}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200/80 bg-white/60 px-2 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white"
+              >
+                <UserPlus size={14} />
+                New group
+              </button>
+              <button
+                type="button"
+                onClick={() => setModal('myLink')}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200/80 bg-white/60 px-2 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white"
+              >
+                <Link2 size={14} />
+                My invite link
+              </button>
+            </div>
+
+            {inviteNote && (
+              <p className="mb-3 flex shrink-0 items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                <span className="min-w-0 flex-1">{inviteNote}</span>
+                <button type="button" onClick={() => setInviteNote('')} aria-label="Dismiss" className="shrink-0">
+                  <X size={12} />
+                </button>
+              </p>
+            )}
+
+            <NotificationToggle
+              enableText="Notify me about new messages"
+              enabledText="Notifications are on. You'll be told about new messages."
+            />
 
             {!isOnline && (
               <p className="mb-3 flex shrink-0 items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -555,6 +643,15 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
                   </p>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={() => setModal('info')}
+                title="Chat info"
+                aria-label="Chat info"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 active:scale-95"
+              >
+                <Info size={16} />
+              </button>
               {/* On a computer there's no back arrow, so this closes the chat and returns to the list. */}
               <button
                 type="button"
@@ -572,7 +669,9 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
               userId={profile.user_id}
               isOnline={isOnline}
               isGroup={selectedChat?.kind === 'group'}
-              readOnly={!!selectedChat && selectedChat.kind === 'direct' && !selectedChat.other_user_id}
+              partnerName={selectedChat ? chatTitle(selectedChat) : 'Them'}
+              blockedIds={blockedIds}
+              lock={chatLock}
             />
           </>
         ) : (
@@ -582,6 +681,58 @@ export default function FriendsView({ user, isOnline, onOpenAccount }: Props) {
           </div>
         )}
       </div>
+
+      {modal === 'group' && (
+        <NewGroupModal
+          isOnline={isOnline}
+          onClose={() => setModal(null)}
+          onCreated={async (chatId) => {
+            setModal(null);
+            // Reload the list first, so the new group is in it before it's opened.
+            await refresh();
+            setSelectedChatId(chatId);
+          }}
+        />
+      )}
+
+      {modal === 'myLink' && (
+        <Modal title="My invite link" onClose={() => setModal(null)}>
+          <InviteLinkBox
+            create={() => createInvite('user', null)}
+            buttonLabel="Make my invite link"
+            hint="Whoever opens this link (after signing in) starts a chat with you. It works for 30 days."
+            disabled={!isOnline}
+          />
+        </Modal>
+      )}
+
+      {modal === 'blocked' && (
+        <BlockedModal
+          userId={profile.user_id}
+          blocked={blocked}
+          isOnline={isOnline}
+          onClose={() => setModal(null)}
+          onChanged={refreshBlocks}
+        />
+      )}
+
+      {modal === 'info' && selectedChatId && (
+        <ChatInfoModal
+          chat={selectedChat}
+          chatId={selectedChatId}
+          userId={profile.user_id}
+          isOnline={isOnline}
+          blockedIds={blockedIds}
+          onClose={() => setModal(null)}
+          onLeft={() => {
+            setModal(null);
+            setSelectedChatId(null);
+            void refresh();
+          }}
+          onBlocksChanged={refreshBlocks}
+          onMembersChanged={refresh}
+        />
+      )}
     </div>
   );
 }

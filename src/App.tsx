@@ -27,6 +27,8 @@ import { takeAuthRedirectError } from './lib/authRedirectError';
 import { useLaunchPrompt } from './lib/useLaunchPrompt';
 import { useLocalModel } from './lib/useLocalModel';
 import { useFriendOutbox } from './lib/friendChat';
+import { capturePendingInvite, useBlocks, useChatListSync, useFriendsUnread, writeOpenChat } from './lib/friends';
+import { useAppBadge, useFriendNotifier } from './lib/friendNotify';
 import { db } from './lib/db';
 import { WifiOff } from 'lucide-react';
 import './App.css';
@@ -93,6 +95,15 @@ function App() {
   const userId = user?.id ?? '';
   // A guest is someone who hasn't created an account or signed in yet.
   const isGuest = user?.is_anonymous !== false;
+
+  // Friends (real accounts only): keep the chat list and unread counts fresh whichever tab is open,
+  // and show a notification when someone writes while you're not looking at that chat.
+  const friendUserId = user && user.is_anonymous === false ? user.id : null;
+  const { blockedIds } = useBlocks(friendUserId, isOnline);
+  const notifyNewMessage = useFriendNotifier(friendUserId, view === 'notes', blockedIds);
+  useChatListSync(friendUserId, isOnline, notifyNewMessage);
+  const friendsUnread = useFriendsUnread(friendUserId);
+  useAppBadge(friendsUnread);
 
   // Every change to the active chat is remembered for this user, so a refresh can restore it.
   function setActiveConversationId(id: string | null) {
@@ -168,6 +179,34 @@ function App() {
     return () => window.removeEventListener('online', refresh);
   }, [userId]);
 
+  // An invite link (…/?invite=CODE) opens Friends; the code is used once you're signed in with a username.
+  useEffect(() => {
+    if (capturePendingInvite()) setView('notes');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Tapping a "new message" notification (or opening …/?chat=ID) shows that chat in Friends.
+  useEffect(() => {
+    if (!friendUserId) return;
+    function openChat(chatId: string) {
+      if (!friendUserId) return;
+      writeOpenChat(friendUserId, chatId);
+      setView('notes');
+      window.dispatchEvent(new CustomEvent('smrt-open-chat', { detail: chatId }));
+    }
+    const chatParam = new URLSearchParams(window.location.search).get('chat');
+    if (chatParam) {
+      openChat(chatParam);
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+    function handleMessage(event: MessageEvent) {
+      if (event.data?.type === 'open-chat' && typeof event.data.chatId === 'string') openChat(event.data.chatId);
+    }
+    navigator.serviceWorker?.addEventListener('message', handleMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', handleMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [friendUserId]);
+
   // Tapping a "research finished" notification opens the research queue.
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('queue') === '1') {
@@ -203,7 +242,14 @@ function App() {
 
   return (
     <div className="flex h-dvh flex-col bg-[radial-gradient(ellipse_at_top_left,_#c7d2fe_0%,_#dbeafe_35%,_#f8fafc_70%,_#ffffff_100%)] dark:bg-[radial-gradient(ellipse_at_top_left,_#1e2c5c_0%,_#111a38_38%,_#0b1220_72%,_#0a0f1c_100%)] md:flex-row">
-      <IconRail view={view} onSelectView={setView} email={user?.email ?? null} isGuest={isGuest} onOpenAccount={() => setShowAccount(true)} />
+      <IconRail
+        view={view}
+        onSelectView={setView}
+        email={user?.email ?? null}
+        isGuest={isGuest}
+        onOpenAccount={() => setShowAccount(true)}
+        friendsUnread={friendsUnread}
+      />
       {view === 'chat' && (
         <Sidebar
           userId={userId}
