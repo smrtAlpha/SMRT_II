@@ -72,11 +72,12 @@ function buildAugmentedPrompt(
   const parts: string[] = [];
 
   // What's known about the user from other chats — applies regardless of which knowledge pack
-  // or attachment (if any) is also in play, so it's handled separately from those below.
+  // or attachment (if any) is also in play, so it's handled separately from those below. Kept as
+  // a short aside rather than an instructional paragraph: the offline model is a small 1B model,
+  // and a heavier block here was crowding out the actual question.
   if (memoryContext) {
-    parts.push(
-      `What you know about the user from earlier conversations (bring these up only if relevant to the question):\n${memoryContext}`
-    );
+    const inline = memoryContext.replace(/^- /gm, '').replace(/\n/g, '; ');
+    parts.push(`(Known about the user: ${inline})`);
   }
 
   if (pack || attachmentContext) {
@@ -271,12 +272,18 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
       // A follow-up like "explain more" has few keywords, so the last question also helps pick the right parts of a file.
       const relevanceQuery = `${job.question} ${lastQuestionIn(history)}`;
       const attachmentContext = buildAttachmentContext(attachments, relevanceQuery, OFFLINE_ATTACHMENT_BUDGET);
-      const augmentedPrompt = buildAugmentedPrompt(job.question, pack, attachmentContext, memoryContext);
+      // Memory is passed separately as a system message below, not mixed into this text — a small
+      // on-device model follows a plain question far more reliably than a multi-section prompt.
+      const augmentedPrompt = buildAugmentedPrompt(job.question, pack, attachmentContext, '');
 
       localGeneratingRef.current = true;
       let reply: string;
       try {
-        reply = await generateLocalReply(augmentedPrompt, history);
+        reply = await generateLocalReply(
+          augmentedPrompt,
+          history,
+          memoryContext ? `What you know about the user from earlier conversations:\n${memoryContext}` : undefined
+        );
       } finally {
         localGeneratingRef.current = false;
       }
@@ -505,7 +512,7 @@ export default function ChatWindow({ userId, conversationId, onNewConversation, 
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <MessageList messages={messages} canRetry={!isLoading} onRetry={handleRetry} />
+      <MessageList messages={messages} chatKey={conversationId ?? ''} canRetry={!isLoading} onRetry={handleRetry} />
       {showReadyBanner && (
         <div className="flex items-center justify-center gap-1.5 py-1 text-sm font-medium text-green-700">
           <CheckCircle2 size={14} />

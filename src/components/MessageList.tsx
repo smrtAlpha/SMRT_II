@@ -23,6 +23,8 @@ import type { ChatMessage } from '../types';
 
 type Props = {
   messages: ChatMessage[];
+  // Which chat these messages belong to, so opening a different chat jumps to its newest message.
+  chatKey?: string;
   // Retry is offered on the newest answer, and only while nothing is being generated.
   canRetry?: boolean;
   onRetry?: (messageId: string) => void;
@@ -164,12 +166,44 @@ function AssistantMessage({ content, onRetry }: { content: string; onRetry?: () 
   );
 }
 
-export default function MessageList({ messages, canRetry = false, onRetry }: Props) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+export default function MessageList({ messages, chatKey = '', canRetry = false, onRetry }: Props) {
+  const scroller = useRef<HTMLDivElement>(null);
+  // True while the reader is at (or near) the bottom. Only then does new content pull the view down.
+  const stickToBottom = useRef(true);
+  const previous = useRef({ chatKey: '', lastId: null as string | null, count: 0 });
 
+  const count = messages.length;
+  const last = count > 0 ? messages[count - 1] : null;
+  const lastId = last?.id ?? null;
+  const lastLength = last?.content.length ?? 0;
+  const lastRole = last?.role ?? null;
+
+  // Follow new content — but only when something really changed, and never while you're reading higher up.
+  // (This used to run on every re-render, so a background sync would yank the chat to the bottom.)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const before = previous.current;
+    previous.current = { chatKey, lastId, count };
+
+    const openedChat = chatKey !== before.chatKey; // a different chat was opened
+    const firstFill = before.count === 0 && count > 0; // the chat has just finished loading
+    const newMessage = lastId !== before.lastId; // something was added at the end
+    const justSent = newMessage && lastRole === 'user'; // you just asked something: always follow
+
+    if (openedChat || firstFill || justSent) stickToBottom.current = true;
+    if (!stickToBottom.current) return;
+
+    const el = scroller.current;
+    if (!el) return;
+    // Jump (no animation) when a chat opens or loads or while an answer is streaming in; glide for a new message.
+    const behavior: ScrollBehavior = openedChat || firstFill || !newMessage ? 'auto' : 'smooth';
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, [chatKey, count, lastId, lastLength, lastRole]);
+
+  function handleScroll() {
+    const el = scroller.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+  }
 
   // Nothing to show yet: a friendly welcome instead of a blank screen.
   if (messages.length === 0) {
@@ -183,7 +217,7 @@ export default function MessageList({ messages, canRetry = false, onRetry }: Pro
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div ref={scroller} onScroll={handleScroll} className="flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 py-3">
         {messages.map((msg, index) =>
           msg.role === 'user' ? (
@@ -222,7 +256,6 @@ export default function MessageList({ messages, canRetry = false, onRetry }: Pro
             />
           )
         )}
-        <div ref={bottomRef} />
       </div>
     </div>
   );
